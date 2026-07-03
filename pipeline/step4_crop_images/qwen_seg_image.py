@@ -84,7 +84,8 @@ def process_all_images(data_root, split, width, height, output_root, raw_data_ro
                     continue
                 image_name = frame['image_name']
                 center_x, center_y = coordinates['x'], coordinates['y']
-                raw_img_path = os.path.join(raw_data_root, split, visit_id, video_id, "hires_wide", image_name)
+                raw_split_dir = "train_val_set" if split in ('train', 'val') else "test_set"
+                raw_img_path = os.path.join(raw_data_root, raw_split_dir, visit_id, video_id, "hires_wide", image_name)
                 out_dir = os.path.join(output_root, split, visit_id, video_id, desc_id)
                 image_prefix = f"frame{idx}"
                 try:
@@ -104,7 +105,7 @@ def main():
     data_root = args.data_root
     split = args.split
     width, height = args.size
-    output_root = os.path.join('path/to/seg_image_output', os.path.basename(data_root))
+    output_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'seg_image_output', os.path.basename(data_root))
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Device: {device}")
     process_all_images(data_root, split, width, height, output_root, args.raw_data_root, device)

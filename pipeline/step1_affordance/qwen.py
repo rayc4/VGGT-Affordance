@@ -111,7 +111,8 @@ def process_affordance_inference(data_root, split, model_path='Qwen/Qwen2.5-7B-I
     all_results = []
     for index, row in tqdm(df_single.iterrows(), total=len(df_single), desc='visit_id'):
         visit_id = row['visit_id']
-        desc_file_path = os.path.join(data_root, split, visit_id, f"{visit_id}_descriptions.json")
+        split_dir = "train_val_set" if split in ('train', 'val') else "test_set"
+        desc_file_path = os.path.join(data_root, split_dir, visit_id, f"{visit_id}_descriptions.json")
         if os.path.exists(desc_file_path):
             print(f"\nProcessing visit_id: {visit_id}")
             results = model.process_description_file(desc_file_path, visit_id)
@@ -126,13 +127,11 @@ def process_affordance_inference(data_root, split, model_path='Qwen/Qwen2.5-7B-I
 
 def main():
     parser = argparse.ArgumentParser(description='Qwen affordance inference')
-    parser.add_argument('--mode', type=str, choices=['affordance'], required=True, help='Mode: affordance')
     parser.add_argument('--model_path', type=str, default='Qwen/Qwen2.5-7B-Instruct', help='Qwen model path')
     parser.add_argument('--data_root', type=str, required=True, help='Data root path')
     parser.add_argument('--split', type=str, choices=['train', 'val', 'test'], required=True, help='Dataset split')
     args = parser.parse_args()
-    if args.mode == 'affordance':
-        process_affordance_inference(args.data_root, args.split, args.model_path)
+    process_affordance_inference(args.data_root, args.split, args.model_path)
 
 if __name__ == '__main__':
     main()

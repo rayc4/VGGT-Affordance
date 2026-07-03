@@ -38,8 +38,9 @@ def process_clip(data_root, split):
         visit_id = row['visit_id']
         visit_rows = df[df['visit_id'] == visit_id]
         print(f"processing visit_id: {visit_id}")
-        desc_path = os.path.join(data_root, split, visit_id, f"{visit_id}_descriptions.json")
-        affordance_path = os.path.join('path/to/affordance_result', split, f"{visit_id}_affordance.json")
+        split_dir = "train_val_set" if split in ('train', 'val') else "test_set"
+        desc_path = os.path.join(data_root, split_dir, visit_id, f"{visit_id}_descriptions.json")
+        affordance_path = os.path.join('pipeline/step1_affordance/affordance_result', split, f"{visit_id}_affordance.json")
         descid2affordance = {}
         if os.path.exists(affordance_path):
             with open(affordance_path, 'r') as f:
@@ -58,7 +59,7 @@ def process_clip(data_root, split):
             continue
         for _, row in visit_rows.iterrows():
             video_id = str(row['video_id'])
-            image_path = os.path.join(data_root, split, visit_id, video_id, "hires_wide")
+            image_path = os.path.join(data_root, split_dir, visit_id, video_id, "hires_wide")
             print(f"processing visit_id: {visit_id} video_id: {video_id}")
             image_files = []
             if os.path.exists(image_path):

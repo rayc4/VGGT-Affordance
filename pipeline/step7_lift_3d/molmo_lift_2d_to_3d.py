@@ -10,18 +10,23 @@ from scenefun3d_utils.fusion_util import PointCloudToImageMapper
 from tqdm import tqdm
 
 def process_one_molmo_mask(npz_path, data_root, split, visit_id, video_id, desc_id, all_results, output_dir=None):
-    laser_scan_path = os.path.join(data_root, "raw_data", split, visit_id, f"{visit_id}_laser_scan.ply")
-    traj_path = os.path.join(data_root, "raw_data", split, visit_id, video_id, "hires_poses.traj")
+    split_dir = "train_val_set" if split in ('train', 'val') else "test_set"
+    laser_scan_path = os.path.join(data_root, split_dir, visit_id, f"{visit_id}_laser_scan.ply")
+    traj_path = os.path.join(data_root, split_dir, visit_id, video_id, "hires_poses.traj")
 
     if not os.path.exists(laser_scan_path):
         print(f"Point cloud file not found: {laser_scan_path}")
         return
-    
+
+    if not os.path.exists(traj_path):
+        print(f"Trajectory file not found (download incomplete?): {traj_path}")
+        return
+
     pcd = o3d.io.read_point_cloud(laser_scan_path)
     original_points = np.asarray(pcd.points)
     original_colors = np.asarray(pcd.colors)
 
-    parser = DataParser(os.path.join(data_root, "raw_data", split))
+    parser = DataParser(os.path.join(data_root, split_dir))
     crop_indices = parser.get_crop_mask(visit_id, return_indices=True)
 
     points = original_points[crop_indices]
@@ -65,7 +70,7 @@ def process_one_molmo_mask(npz_path, data_root, split, visit_id, video_id, desc_
         print(f"Unsupported filename format: {basename} (expected *_crop_mask_data.npz or *_mask_data.npz)")
         return
 
-    depth_dir = os.path.join(data_root, "raw_data", split, visit_id, video_id, "hires_depth")
+    depth_dir = os.path.join(data_root, split_dir, visit_id, video_id, "hires_depth")
     depth_path = os.path.join(depth_dir, f"{video_id}_{frame_id}.png")
     if not os.path.exists(depth_path):
         print(f"Depth file not found: {depth_path}")
@@ -74,7 +79,7 @@ def process_one_molmo_mask(npz_path, data_root, split, visit_id, video_id, desc_
     depth = parser.read_depth_frame(depth_path)
     h, w = depth.shape
 
-    intrinsics_dir = os.path.join(data_root, "raw_data", split, visit_id, video_id, "hires_wide_intrinsics")
+    intrinsics_dir = os.path.join(data_root, split_dir, visit_id, video_id, "hires_wide_intrinsics")
     intrinsics_files = [f for f in os.listdir(intrinsics_dir) if f.endswith('.pincam')]
     intrinsic_path = None
     for f in intrinsics_files:

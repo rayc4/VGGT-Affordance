@@ -1,6 +1,7 @@
 EXP_NAME=$1
 
-CUDA_LAUNCH_BLOCKING=1 CUDA_VISIBLE_DEVICES=0 python train_no_diff.py hydra/job_logging=none hydra/hydra_logging=none \
+PYTHONPATH=/work/spatial/Raymond/TASA-main CUDA_LAUNCH_BLOCKING=1 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+python pipeline/step8_3d_training/train_no_diff.py hydra/job_logging=none hydra/hydra_logging=none \
             exp_name=${EXP_NAME} \
             output_dir=outputs \
             platform=TensorBoard \

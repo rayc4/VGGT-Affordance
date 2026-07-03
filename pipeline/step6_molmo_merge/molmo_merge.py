@@ -4,10 +4,10 @@ import json
 from PIL import Image
 from tqdm import tqdm
 
-MOLMO_ROOT = 'path/to/molmo_output'
-CROPINFO_ROOT = 'path/to/seg_image/point_clipwithaffordance_output/val'
-BIGIMG_ROOT = 'path/to/raw_data/val'
-MERGE_ROOT = 'path/to/molmo_merge'
+MOLMO_ROOT = 'pipeline/step5_molmo_sam/molmo_output'
+CROPINFO_ROOT = 'pipeline/step4_crop_images/seg_image_output/point_clipwithaffordance_output/train'
+BIGIMG_ROOT = 'path/to/raw_data/val'  # unused: original image path comes from each crop json
+MERGE_ROOT = 'pipeline/step6_molmo_merge/molmo_merge_output'
 
 
 def merge_mask_to_bigimg(molmo_mask, crop_info, bigimg_shape):

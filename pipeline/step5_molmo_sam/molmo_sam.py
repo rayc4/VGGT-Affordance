@@ -271,7 +271,7 @@ def find_crop_images(root_dir):
     return crop_images
 
 def get_affordance_info(split, visit_id, video_id, desc_id):
-    json_path = f"qwen2/affordance/{split}/{visit_id}_affordance.json"
+    json_path = f"pipeline/step1_affordance/affordance_result/{split}/{visit_id}_affordance.json"
     if not os.path.exists(json_path):
         return None
     try:
@@ -285,8 +285,8 @@ def get_affordance_info(split, visit_id, video_id, desc_id):
     return None
 
 def main():
-    root_dir = 'path/to/seg_image/point_clipwithaffordance_output/val'
-    output_root = 'path/to/molmo_output'
+    root_dir = 'pipeline/step4_crop_images/seg_image_output/point_clipwithaffordance_output/train'
+    output_root = 'pipeline/step5_molmo_sam/molmo_output'
     os.makedirs(output_root, exist_ok=True)
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     print(f"Device: {device}")

@@ -444,7 +444,8 @@ def predict_fallback_possible_point(model, processor, image_path, action_descrip
     return result
 
 def load_descriptions(data_root, split, visit_id):
-    desc_file = os.path.join(data_root, split, visit_id, f"{visit_id}_descriptions.json")
+    split_dir = "train_val_set" if split in ('train', 'val') else "test_set"
+    desc_file = os.path.join(data_root, split_dir, visit_id, f"{visit_id}_descriptions.json")
     if not os.path.exists(desc_file):
         print(f"Warning: description file not found: {desc_file}")
         return None
@@ -466,6 +467,7 @@ def load_clip4_results(clip_root, split, visit_id, video_id):
 
 def process_single_video(model, processor, data_root, split, visit_id, video_id, clip_root, affordance_map=None, enable_validation=True):
     print(f"\nProcessing video: {visit_id}/{video_id}")
+    split_dir = "train_val_set" if split in ('train', 'val') else "test_set"
 
     desc_data = load_descriptions(data_root, split, visit_id)
     if desc_data is None:
@@ -495,7 +497,7 @@ def process_single_video(model, processor, data_root, split, visit_id, video_id,
         
         print(f"    First attempt: standard coordinate prediction")
         for frame_name in top_frames:
-            image_path = os.path.join(data_root, split, visit_id, video_id, "hires_wide", frame_name)
+            image_path = os.path.join(data_root, split_dir, visit_id, video_id, "hires_wide", frame_name)
             if not os.path.exists(image_path):
                 print(f"Warning: image not found: {image_path}")
                 continue
@@ -521,7 +523,7 @@ def process_single_video(model, processor, data_root, split, visit_id, video_id,
         if not first_attempt_found:
             print(f"    First attempt found no point, second attempt: direct query")
             for frame_name in top_frames:
-                image_path = os.path.join(data_root, split, visit_id, video_id, "hires_wide", frame_name)
+                image_path = os.path.join(data_root, split_dir, visit_id, video_id, "hires_wide", frame_name)
                 if not os.path.exists(image_path):
                     continue
                 try:
@@ -553,7 +555,7 @@ def process_single_video(model, processor, data_root, split, visit_id, video_id,
         if not found_any and len(top_frames) > 0:
             print(f"    No affordance point found, trying fallback")
             for fallback_frame in top_frames:
-                fallback_image = os.path.join(data_root, split, visit_id, video_id, "hires_wide", fallback_frame)
+                fallback_image = os.path.join(data_root, split_dir, visit_id, video_id, "hires_wide", fallback_frame)
                 if os.path.exists(fallback_image):
                     fallback_result = predict_fallback_possible_point(
                         model, processor, fallback_image, description, enable_validation=enable_validation
@@ -585,8 +587,8 @@ def main():
     parser = argparse.ArgumentParser(description='Batch point prediction')
     parser.add_argument('--data_root', type=str, required=True, help='Path to data root')
     parser.add_argument('--split', type=str, required=True, choices=['train', 'val'], help='Dataset split')
-    parser.add_argument('--clip_root', type=str, default='path/to/clip4_output', help='Path to CLIP results')
-    parser.add_argument('--affordance_root', type=str, default='path/to/affordance_result', help='Path to affordance results')
+    parser.add_argument('--clip_root', type=str, required=True, help='Path to CLIP results')
+    parser.add_argument('--affordance_root', type=str, required=True, help='Path to affordance results')
     parser.add_argument('--output_root', type=str, default=None, help='Output root (default: path/to/qwen2_output/...)')
     parser.add_argument('--enable_validation', action='store_true', default=True, help='Enable coordinate validation')
     parser.add_argument('--disable_validation', dest='enable_validation', action='store_false', help='Disable coordinate validation')
@@ -605,12 +607,13 @@ def main():
         else:
             clipr4_part = clip_root_base
         output_dir_name = f"point_{clipr4_part}_output"
-        output_root = os.path.join("path/to/qwen2_output", output_dir_name, args.split)
+        output_root = os.path.join("pipeline/step3_point_prediction", output_dir_name, args.split)
     print(f"Output root: {output_root}")
 
     model, processor = load_model_and_processor()
 
-    data_dir = os.path.join(args.data_root, args.split)
+    split_dir = "train_val_set" if args.split in ('train', 'val') else "test_set"
+    data_dir = os.path.join(args.data_root, split_dir)
     visit_ids = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
     for visit_id in tqdm(visit_ids, desc="visit_id"):
         print(f"\n{'='*60}\nvisit_id: {visit_id}\n{'='*60}")

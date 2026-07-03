@@ -336,7 +336,8 @@ class AffordanceDataset(Dataset):
                 False
             ), f"video_id must be specified for the data asset identifier '{data_asset_identifier}'"
 
-        ROOT = self.root_dir + '/raw_data/' + split
+        split_dir = "train_val_set" if split in ('train', 'val') else "test_set"
+        ROOT = self.root_dir + '/raw_data/' + split_dir
         visit_id = str(visit_id)
 
         data_path = data_path.replace("<data_dir>", ROOT).replace("<visit_id>", visit_id)
