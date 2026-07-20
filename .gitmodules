@@ -1,0 +1,6 @@
+[submodule "point-transformer"]
+	path = point-transformer
+	url = git@github.com:POSTECH-CVLab/point-transformer.git
+[submodule "vggt"]
+	path = vggt
+	url = org-16943930@github.com:facebookresearch/vggt.git

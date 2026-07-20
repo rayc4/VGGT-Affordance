@@ -15,7 +15,7 @@ import pdb
 
 class AffordanceDataset(Dataset):
     def __init__(self, root_dir, split, use_processed_data=False, use_division=False, use_processed_data_3=False,
-    use_sam2=False, use_sam2_1=False, use_processed_final_train=False):
+    use_sam2=False, use_sam2_1=False, use_processed_final_train=False, require_nonempty_gt=False):
         self.root_dir = root_dir
         self.split = split
         self.use_processed_data = use_processed_data
@@ -24,6 +24,8 @@ class AffordanceDataset(Dataset):
         self.use_sam2 = use_sam2
         self.use_sam2_1 = use_sam2_1
         self.use_processed_final_train = use_processed_final_train
+        self.require_nonempty_gt = require_nonempty_gt
+        self.num_skipped_empty_gt = 0
 
         if self.use_sam2:
             self.processed_dir = os.path.join(root_dir, 'processed_sam2', split)
@@ -50,7 +52,8 @@ class AffordanceDataset(Dataset):
                             "pred_mask_global.npy",
                             "pred_mask_local.npy"
                         ]
-                        if all(os.path.exists(os.path.join(desc_path, f)) for f in files):
+                        if all(os.path.exists(os.path.join(desc_path, f)) for f in files) \
+                                and self._keep_item(desc_path):
                             self.data_items.append({
                                 "visit_id": visit_id,
                                 "scan_id": scan_id,
@@ -86,7 +89,8 @@ class AffordanceDataset(Dataset):
                                 "pred_mask_global.npy",
                                 "pred_mask_local.npy"
                             ]
-                            if all(os.path.exists(os.path.join(image_path, f)) for f in files):
+                            if all(os.path.exists(os.path.join(image_path, f)) for f in files) \
+                                    and self._keep_item(image_path):
                                 self.data_items.append({
                                     "visit_id": visit_id,
                                     "scan_id": scan_id,
@@ -149,6 +153,24 @@ class AffordanceDataset(Dataset):
                         'desc_id': desc['desc_id'],
                         'description': desc['description']
                     })
+
+    def _keep_item(self, base_path):
+        """Whether to keep a sample whose files are all present.
+
+        The 8192-point crop is centred on the lifted prediction, not on the annotation,
+        so when the prediction lands off-target the annotation falls outside the crop and
+        gt_mask_local is all zeros. That happens for roughly two thirds of the sam2
+        samples, and training on them rewards predicting an empty mask everywhere.
+        """
+        if not self.require_nonempty_gt:
+            return True
+
+        gt_mask_local = np.load(os.path.join(base_path, "gt_mask_local.npy"))
+        if np.count_nonzero(gt_mask_local) > 0:
+            return True
+
+        self.num_skipped_empty_gt += 1
+        return False
 
     def __len__(self):
         return len(self.data_items)
@@ -307,7 +329,7 @@ class AffordanceDataset(Dataset):
             }
     def get_visit_id(self):
         with open(
-            os.path.join(f"{self.root_dir}/raw_data/benchmark_file_lists/{self.split}_set.csv")
+            os.path.join(f"{self.root_dir}/benchmark_file_lists/{self.split}_set.csv")
         ) as f:
             visit_video = f.readlines()[1:]
 
@@ -337,7 +359,7 @@ class AffordanceDataset(Dataset):
             ), f"video_id must be specified for the data asset identifier '{data_asset_identifier}'"
 
         split_dir = "train_val_set" if split in ('train', 'val') else "test_set"
-        ROOT = self.root_dir + '/raw_data/' + split_dir
+        ROOT = os.path.join(self.root_dir, split_dir)
         visit_id = str(visit_id)
 
         data_path = data_path.replace("<data_dir>", ROOT).replace("<visit_id>", visit_id)

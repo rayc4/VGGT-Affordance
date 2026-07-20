@@ -6,12 +6,11 @@ hydra:
 
 defaults:
   - _self_
-  - task: null
-  - model: null
+  - task: contact_gen
+  - model: cdm
 
 ## general
-project: 'scenediffuser++'
-project_desc: 'scenediffuser plus plus'
+project: 'scenediffuser++'  # Board/WanDB project name
 
 ## output
 output_dir: 'outputs'
@@ -21,6 +20,9 @@ exp_dir: ${output_dir}/${now:%Y-%m-%d_%H-%M-%S}_${exp_name}
 log_dir: ${exp_dir}/log
 ckpt_dir: ${exp_dir}/ckpt
 eval_dir: ${exp_dir}/eval
+# Optional explicit model checkpoint for evaluation. When null, the evaluator
+# retains its original behavior and selects the latest checkpoint in ckpt_dir.
+checkpoint: null
 
 platform: 'TensorBoard' # ['TensorBoard', 'WanDB']
 
@@ -28,6 +30,8 @@ platform: 'TensorBoard' # ['TensorBoard', 'WanDB']
 gpu: 0
 
 ## diffusion
+## Kept because create_gaussian_diffusion() reads every key below at model-build
+## time. train_no_diff discards the diffusion object, but removing these crashes it.
 diffusion:
   predict_xstart: true
   steps: 1000
@@ -35,13 +39,8 @@ diffusion:
   timestep_respacing: ''
   rescale_timesteps: false
   loss_type: 'MSE'
-
   learn_sigma: false
   sigma_small: true
 
-## statistics
-stats:
-  mode: ['word_stats'] # ['word_stats', 'motion_stats']
-
 ## random seed
-seed: 2023
+seed: 2023  # read by eval_no_diff.py

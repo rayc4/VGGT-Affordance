@@ -1,0 +1,20 @@
+name: CDMVGGT
+
+## initial mask channel
+input_feats: 1
+
+## per-point VGGT feature dimension; must match the extractor's --out_dim
+## (2048 if extraction ran with --out_dim 0, i.e. raw aggregator tokens)
+vggt_feat_dim: 256
+
+## width of the learned projection concatenated with the mask channel;
+## PointTransformerSeg input dim becomes input_feats + vggt_proj_dim
+vggt_proj_dim: 32
+
+## scene backbone (same as the CDM path)
+scene_model:
+  name: 'PointTransformerSeg'
+  num_points: ${task.dataset.num_points}
+  point_feat_dim: 32
+  pretrained_weight:
+  freeze: false

@@ -127,6 +127,26 @@ python pipeline/step8_3d_training/eval_no_diff.py \
 
 The script finds the latest checkpoint under `exp_dir`, runs 3D segmentation / contact evaluation on the validation set, and writes `results.json`.
 
+To evaluate every checkpoint in a run and then collect the training and
+evaluation curves:
+
+```bash
+python3 scripts/eval_all_checkpoints.py outputs/<your-exp-dir>/ckpt \
+  --cuda-visible-devices 0
+
+python3 scripts/plot_metrics.py outputs/<your-exp-dir>
+```
+
+Batch evaluation writes one resumable result tree per checkpoint below
+`eval/checkpoints/`. Pass additional Hydra overrides after `--`, for example
+`-- task.evaluator.eval_nbatch=32`. For the VGGT model, select its evaluator
+with `--eval-script pipeline/step8_3d_training_vggt/eval_vggt.py`.
+
+The metrics script writes `training_metrics.csv`, `evaluation_metrics.csv`,
+`training_metrics.png`, `loss_metrics.png`, and `evaluation_metrics.png` below
+`metrics/`. It can also compare multiple experiments by passing multiple
+experiment directories.
+
 ---
 
 ## Configuration and Experiment Management

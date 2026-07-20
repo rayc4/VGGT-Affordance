@@ -97,10 +97,10 @@ def process_all_images(data_root, split, width, height, output_root, raw_data_ro
 
 def main():
     parser = argparse.ArgumentParser(description="Crop image regions centered at given points (GPU supported)")
-    parser.add_argument('--data_root', type=str, required=True, help='Path to point output, e.g. path/to/point_clipwithaffordance_output')
-    parser.add_argument('--raw_data_root', type=str, default='path/to/raw_data', help='Path to raw data (images)')
+    parser.add_argument('--data_root', type=str, default='pipeline/step3_point_prediction/point_clipwithaffordance_output', help='Path to point output, e.g. path/to/point_clipwithaffordance_output')
+    parser.add_argument('--raw_data_root', type=str, default='scenefun3d', help='Path to raw data (images)')
     parser.add_argument('--split', type=str, required=True, help='Split: train/val/test')
-    parser.add_argument('--size', type=int, nargs=2, required=True, metavar=('W', 'H'), help='Crop width and height')
+    parser.add_argument('--size', type=int, nargs=2, default=[512, 512], metavar=('W', 'H'), help='Crop width and height (default: 512 512)')
     args = parser.parse_args()
     data_root = args.data_root
     split = args.split

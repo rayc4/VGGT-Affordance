@@ -128,7 +128,7 @@ def process_affordance_inference(data_root, split, model_path='Qwen/Qwen2.5-7B-I
 def main():
     parser = argparse.ArgumentParser(description='Qwen affordance inference')
     parser.add_argument('--model_path', type=str, default='Qwen/Qwen2.5-7B-Instruct', help='Qwen model path')
-    parser.add_argument('--data_root', type=str, required=True, help='Data root path')
+    parser.add_argument('--data_root', type=str, default='scenefun3d', help='Data root path')
     parser.add_argument('--split', type=str, choices=['train', 'val', 'test'], required=True, help='Dataset split')
     args = parser.parse_args()
     process_affordance_inference(args.data_root, args.split, args.model_path)

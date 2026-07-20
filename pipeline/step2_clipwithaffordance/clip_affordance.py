@@ -122,7 +122,7 @@ def process_clip(data_root, split):
 
 def main():
     parser = argparse.ArgumentParser(description='CLIP affordance dataset processing')
-    parser.add_argument('--data_root', type=str, required=True, help='Data root path')
+    parser.add_argument('--data_root', type=str, default='scenefun3d', help='Data root path')
     parser.add_argument('--split', type=str, choices=['train', 'val', 'test'], required=True, help='Dataset split')
     args = parser.parse_args()
     process_clip(args.data_root, args.split)

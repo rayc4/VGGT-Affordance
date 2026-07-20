@@ -1,0 +1,34 @@
+## config/default.yaml (VGGT variant)
+hydra:
+  run:
+    dir: ${exp_dir}
+  output_subdir: null
+
+defaults:
+  - _self_
+  - task: mask_refinement_vggt
+  - model: cdm_vggt
+
+## general
+project: 'tasa-vggt'
+project_desc: '3d affordance mask refinement conditioned on lifted VGGT features'
+
+## output
+output_dir: 'outputs'
+exp_name: 'vggt_refine'
+
+exp_dir: ${output_dir}/${now:%Y-%m-%d_%H-%M-%S}_${exp_name}
+log_dir: ${exp_dir}/log
+ckpt_dir: ${exp_dir}/ckpt
+eval_dir: ${exp_dir}/eval
+# Optional explicit model checkpoint for evaluation. When null, the evaluator
+# retains its original behavior and selects the latest checkpoint in ckpt_dir.
+checkpoint: null
+
+platform: 'TensorBoard' # ['TensorBoard', 'WanDB']
+
+## device
+gpu: 0
+
+## random seed
+seed: 2023

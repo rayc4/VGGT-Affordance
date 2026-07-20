@@ -1,3 +1,5 @@
+import argparse
+import csv
 import os
 import re
 import sys
@@ -77,9 +79,10 @@ def process_sam_prompts(sam_model, sam_processor, img, points):
     if points is None or len(points) == 0:
         return None, None
     try:
-        input_points = points.tolist()
-        input_labels = [[1] for _ in range(len(input_points))]
-        print(f"Processing {len(input_points)} point(s): {input_points}")
+        # 1 image, N single-point prompt groups -> N independent masks
+        input_points = [[[p] for p in points.tolist()]]
+        input_labels = [[[1] for _ in range(len(points))]]
+        print(f"Processing {len(points)} point(s): {points.tolist()}")
         inputs = sam_processor(
             img,
             input_points=input_points,
@@ -89,7 +92,6 @@ def process_sam_prompts(sam_model, sam_processor, img, points):
         image_embeddings = sam_model.get_image_embeddings(inputs["pixel_values"])
         inputs.pop("pixel_values", None)
         inputs.update({"image_embeddings": image_embeddings})
-        inputs["input_points"] = inputs["input_points"].unsqueeze(0)
         with torch.no_grad():
             outputs = sam_model(**inputs)
     except Exception as e:
@@ -222,12 +224,12 @@ def process_single_image(molmo_model, molmo_processor, sam_model, sam_processor,
     generated_text = molmo_processor.tokenizer.decode(generated_tokens, skip_special_tokens=True)
     molmo_time = time.time() - start_time
     points = extract_points(generated_text, image_size)
+    mask_data_path = os.path.join(output_dir, f"{image_name}_mask_data.npz")
     if points is not None:
         start_time = time.time()
         masks, scores = process_sam_prompts(sam_model, sam_processor, image, points)
         sam_time = time.time() - start_time
         if masks is not None:
-            mask_data_path = os.path.join(output_dir, f"{image_name}_mask_data.npz")
             save_mask_data(masks, points, mask_data_path)
             mask_overlay_path = os.path.join(output_dir, f"{image_name}_mask_overlay.jpg")
             save_mask_overlay(image_path, masks, points, scores, mask_overlay_path)
@@ -241,18 +243,34 @@ def process_single_image(molmo_model, molmo_processor, sam_model, sam_processor,
                     print(f"    Mask coverage: {coverage:.1f}%, confidence: {confidence:.3f}")
             return True
         else:
+            # Checkpoint the failure with an empty marker so re-runs skip it
+            # (delete the npz to force a retry).
+            save_mask_data(None, None, mask_data_path)
             print(f"  SAM failed - Molmo: {molmo_time:.1f}s")
             return False
     else:
+        save_mask_data(None, None, mask_data_path)
         print(f"  No valid points - Molmo: {molmo_time:.1f}s")
         return False
 
-def find_crop_images(root_dir):
+def load_split_visit_ids(data_root, split):
+    split_path = os.path.join(data_root, "benchmark_file_lists", f"{split}_set.csv")
+    if not os.path.isfile(split_path):
+        raise FileNotFoundError(f"Benchmark split file not found: {split_path}")
+
+    with open(split_path, newline="") as f:
+        return {str(row["visit_id"]) for row in csv.DictReader(f)}
+
+
+def find_crop_images(root_dir, split, allowed_visit_ids):
     crop_images = []
-    split = os.path.basename(root_dir.rstrip('/'))
-    for visit_id in os.listdir(root_dir):
+    ignored_visits = []
+    for visit_id in sorted(os.listdir(root_dir)):
         visit_path = os.path.join(root_dir, visit_id)
         if not os.path.isdir(visit_path):
+            continue
+        if visit_id not in allowed_visit_ids:
+            ignored_visits.append(visit_id)
             continue
         for video_id in os.listdir(visit_path):
             video_path = os.path.join(visit_path, video_id)
@@ -268,6 +286,11 @@ def find_crop_images(root_dir):
                             os.path.join(desc_path, fname),
                             split, visit_id, video_id, desc_id, fname
                         ))
+    if ignored_visits:
+        print(
+            f"Ignored {len(ignored_visits)} visit(s) outside benchmark split "
+            f"'{split}': {ignored_visits}"
+        )
     return crop_images
 
 def get_affordance_info(split, visit_id, video_id, desc_id):
@@ -285,23 +308,61 @@ def get_affordance_info(split, visit_id, video_id, desc_id):
     return None
 
 def main():
-    root_dir = 'pipeline/step4_crop_images/seg_image_output/point_clipwithaffordance_output/train'
-    output_root = 'pipeline/step5_molmo_sam/molmo_output'
-    os.makedirs(output_root, exist_ok=True)
+    parser = argparse.ArgumentParser(description="Step 5: Molmo pointing + SAM segmentation on crop images")
+    parser.add_argument('--split', required=True, choices=['train', 'val'])
+    parser.add_argument('--data_root', default='scenefun3d',
+                        help='Dataset root containing benchmark_file_lists')
+    parser.add_argument('--root_dir', default=None,
+                        help='Split-specific Step 4 input (default: .../point_clipwithaffordance_output/<split>)')
+    parser.add_argument('--output_root', default=None,
+                        help='Split-specific output (default: .../molmo_output/<split>)')
+    parser.add_argument('--num_shards', type=int, default=1, help="total number of parallel shards")
+    parser.add_argument('--shard', type=int, default=0, help="index of this shard in [0, num_shards)")
+    args = parser.parse_args()
+    if not (0 <= args.shard < args.num_shards):
+        raise ValueError(f"--shard must be in [0, {args.num_shards}), got {args.shard}")
+    if args.root_dir is None:
+        args.root_dir = os.path.join(
+            'pipeline/step4_crop_images/seg_image_output/point_clipwithaffordance_output',
+            args.split,
+        )
+    if args.output_root is None:
+        args.output_root = os.path.join(
+            'pipeline/step5_molmo_sam/molmo_output', args.split
+        )
+    if not os.path.isdir(args.root_dir):
+        raise FileNotFoundError(f"Step 4 split input not found: {args.root_dir}")
+
+    allowed_visit_ids = load_split_visit_ids(args.data_root, args.split)
+    os.makedirs(args.output_root, exist_ok=True)
+    crop_images = sorted(find_crop_images(args.root_dir, args.split, allowed_visit_ids))
+    print(f"Found {len(crop_images)} _crop.jpg image(s) total")
+    crop_images = crop_images[args.shard::args.num_shards]
+    print(f"Shard {args.shard}/{args.num_shards}: {len(crop_images)} image(s)")
+    # Resume: skip images whose mask_data npz already exists.
+    pending = []
+    for item in crop_images:
+        img_path, split, visit_id, video_id, desc_id, fname = item
+        image_name = os.path.splitext(fname)[0]
+        mask_data_path = os.path.join(args.output_root, visit_id, video_id, desc_id, f"{image_name}_mask_data.npz")
+        if not os.path.exists(mask_data_path):
+            pending.append(item)
+    print(f"{len(crop_images) - len(pending)} already done, {len(pending)} to process")
+    if not pending:
+        print("Nothing to do.")
+        return
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     print(f"Device: {device}")
     molmo_model, molmo_processor = init_molmo_model(device)
     sam_model, sam_processor = init_sam_model(device)
-    crop_images = find_crop_images(root_dir)
-    print(f"Found {len(crop_images)} _crop.jpg image(s)")
-    for idx, (img_path, split, visit_id, video_id, desc_id, fname) in enumerate(crop_images):
-        print(f"\n[{idx+1}/{len(crop_images)}] Processing: {img_path}")
+    for idx, (img_path, split, visit_id, video_id, desc_id, fname) in enumerate(pending):
+        print(f"\n[{idx+1}/{len(pending)}] Processing: {img_path}")
         affordance_info = get_affordance_info(split, visit_id, video_id, desc_id)
         if affordance_info and affordance_info.strip():
             prompt = f"point to {affordance_info}"
         else:
             prompt = "point to the affordance."
-        out_dir = os.path.join(output_root, visit_id, video_id, desc_id)
+        out_dir = os.path.join(args.output_root, visit_id, video_id, desc_id)
         os.makedirs(out_dir, exist_ok=True)
         image_name = os.path.splitext(fname)[0]
         process_single_image(

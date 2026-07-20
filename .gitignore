@@ -3,3 +3,10 @@ __pycache__/
 dataset/__pycache__/
 *.jpg
 *.npz
+*.log
+*.npy
+*.ply
+*.pt
+outputs/
+logs/
+*.DS_Store

@@ -585,14 +585,21 @@ def save_results(results, split, visit_id, video_id, output_root):
 
 def main():
     parser = argparse.ArgumentParser(description='Batch point prediction')
-    parser.add_argument('--data_root', type=str, required=True, help='Path to data root')
+    parser.add_argument('--data_root', type=str, default='scenefun3d', help='Path to data root')
     parser.add_argument('--split', type=str, required=True, choices=['train', 'val'], help='Dataset split')
-    parser.add_argument('--clip_root', type=str, required=True, help='Path to CLIP results')
-    parser.add_argument('--affordance_root', type=str, required=True, help='Path to affordance results')
+    parser.add_argument('--clip_root', type=str, default='pipeline/step2_clipwithaffordance/clipwithaffordance_output', help='Path to CLIP results')
+    parser.add_argument('--affordance_root', type=str, default='pipeline/step1_affordance/affordance_result', help='Path to affordance results')
     parser.add_argument('--output_root', type=str, default=None, help='Output root (default: path/to/qwen2_output/...)')
     parser.add_argument('--enable_validation', action='store_true', default=True, help='Enable coordinate validation')
     parser.add_argument('--disable_validation', dest='enable_validation', action='store_false', help='Disable coordinate validation')
+    parser.add_argument('--num_shards', type=int, default=1, help='Total number of parallel shards (data-parallel across GPUs)')
+    parser.add_argument('--shard', type=int, default=0, help='This process\'s shard index in [0, num_shards)')
     args = parser.parse_args()
+
+    if args.num_shards < 1:
+        parser.error('--num_shards must be >= 1')
+    if not (0 <= args.shard < args.num_shards):
+        parser.error(f'--shard must be in [0, {args.num_shards})')
 
     print(f"Data root: {args.data_root}, split: {args.split}")
     print(f"CLIP root: {args.clip_root}, affordance root: {args.affordance_root}")
@@ -614,7 +621,10 @@ def main():
 
     split_dir = "train_val_set" if args.split in ('train', 'val') else "test_set"
     data_dir = os.path.join(args.data_root, split_dir)
-    visit_ids = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
+    visit_ids = sorted(d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d)))
+    if args.num_shards > 1:
+        visit_ids = visit_ids[args.shard::args.num_shards]
+        print(f"Shard {args.shard}/{args.num_shards}: processing {len(visit_ids)} of the visit_id(s)")
     for visit_id in tqdm(visit_ids, desc="visit_id"):
         print(f"\n{'='*60}\nvisit_id: {visit_id}\n{'='*60}")
         affordance_map = load_affordance_results(args.affordance_root, args.split, visit_id)

@@ -1,5 +1,5 @@
 data:
-  data_dir: "path/to/processed_65536"
+  data_dir: "processed_sam2"
   max_points: 65536
   normalize: true
 
@@ -18,11 +18,6 @@ training:
   weight_decay: 0.0001
   lr_anneal_epochs: 80
   resume_ckpt: null
-  mask_loss_weight: 1.0
-  geometry_loss_weight: 0.1
-  boundary_loss_weight: 0.5
-  smoothness_loss_weight: 0.1
-  consistency_loss_weight: 0.2
 
 inference:
   batch_size: 1

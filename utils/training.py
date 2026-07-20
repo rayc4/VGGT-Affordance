@@ -678,14 +678,8 @@ class SimpleMaskRefinementTrainLoop:
 
         self.device = kwargs['device'] if 'device' in kwargs else 'cpu'
         self.save_dir = kwargs['save_dir'] if 'save_dir' in kwargs else '/tmp'
-        self.gpu = kwargs['gpu'] if 'gpu' in kwargs else 0
+        self.is_main = kwargs['is_main'] if 'is_main' in kwargs else True
         self.is_distributed = kwargs['is_distributed'] if 'is_distributed' in kwargs else False
-
-        self.mask_loss_weight = getattr(cfg, 'mask_loss_weight', 1.0)
-        self.geometry_loss_weight = getattr(cfg, 'geometry_loss_weight', 0.1)
-        self.boundary_loss_weight = getattr(cfg, 'boundary_loss_weight', 0.5)
-        self.smoothness_loss_weight = getattr(cfg, 'smoothness_loss_weight', 0.1)
-        self.consistency_loss_weight = getattr(cfg, 'consistency_loss_weight', 0.2)
 
         self.step = 1
         self.resume_step = self._load_and_sync_parameters()
@@ -696,10 +690,10 @@ class SimpleMaskRefinementTrainLoop:
             if p.requires_grad:
                 params.append(p)
                 nparams.append(p.nelement())
-                if self.gpu == 0:
+                if self.is_main:
                     logger.info(f'Add {n} {p.shape} for mask refinement optimization.')
 
-        if self.gpu == 0:
+        if self.is_main:
             logger.info(f'{len(params)} parameters for mask refinement optimization.')
             logger.info(f'Total model size is {(sum(nparams) / 1e6):.2f} M.')
 
@@ -721,7 +715,7 @@ class SimpleMaskRefinementTrainLoop:
         if self.resume_checkpoint:
             resume_step = parse_resume_step_from_filename(self.resume_checkpoint)
             load_ckpt(self.model, self.resume_checkpoint)
-            if self.gpu == 0:
+            if self.is_main:
                 logger.info(f"Loading mask refinement model from checkpoint: {self.resume_checkpoint}...")
             
         return resume_step
@@ -737,14 +731,14 @@ class SimpleMaskRefinementTrainLoop:
             self.optimizer.load_state_dict(
                 torch.load(opt_checkpoint)
             )
-            if self.gpu == 0:
+            if self.is_main:
                 logger.info(f"Loading optimizer state from checkpoint: {opt_checkpoint}...")
 
     def _anneal_lr(self):
         """Learning rate annealing."""
         if not self.lr_anneal_steps:
             return
-        frac_done = (self.step + self.resume_step) / self.lr_anneal_steps
+        frac_done = self.step / self.lr_anneal_steps
         lr = self.lr * (1 - frac_done)
         for param_group in self.optimizer.param_groups:
             param_group["lr"] = lr
@@ -765,7 +759,7 @@ class SimpleMaskRefinementTrainLoop:
         with open(os.path.join(self.save_dir, f"mask_refinement_opt.pt"), "wb") as f:
             torch.save(self.optimizer.state_dict(), f)
         
-        if self.gpu == 0:
+        if self.is_main:
             logger.info(f'Mask refinement model saved! [Step: {self.step:06d}]')
 
     def _compute_mask_refinement_loss(self, pred_mask, gt_mask, point_cloud, initial_mask):
@@ -779,23 +773,24 @@ class SimpleMaskRefinementTrainLoop:
         """
         batch_size, num_points = pred_mask.shape
 
+        mask_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            pred_mask, gt_mask.float()
+        )
         pred_probs = torch.sigmoid(pred_mask)
         dice_loss = self._compute_dice_loss(pred_probs, gt_mask.float())
+        focal_loss = self._compute_focal_loss(pred_probs, gt_mask.float())
+        iou_loss = self._compute_iou_loss(pred_probs, gt_mask.float())
 
+        total_loss = 0.3 * mask_loss + 0.3 * dice_loss + 0.2 * focal_loss + 0.2 * iou_loss
+        
         stats = self._compute_mask_stats(pred_probs, gt_mask.float())
 
-        total_loss = dice_loss
-        
         return {
             'loss': total_loss,
-            'mask_loss': torch.tensor(0.0),
-            # 'dice_loss': torch.tensor(0.0),
-            'focal_loss': torch.tensor(0.0),
-            'iou_loss': torch.tensor(0.0),
-            # 'mask_loss': mask_loss,
+            'mask_loss': mask_loss,
             'dice_loss': dice_loss,
-            # 'focal_loss': focal_loss,
-            # 'iou_loss': iou_loss,
+            'focal_loss': focal_loss,
+            'iou_loss': iou_loss,
             'pred_mean': stats['pred_mean'],
             'gt_mean': stats['gt_mean'],
             'pred_std': stats['pred_std'],
@@ -882,7 +877,7 @@ class SimpleMaskRefinementTrainLoop:
                 self.optimizer.step()
                 self._anneal_lr()
 
-                if self.gpu == 0 and self.step % self.log_every_step == 0:
+                if self.is_main and self.step % self.log_every_step == 0:
                     losses_dict = {key: losses[key].item() for key in losses}
                     
                     logger.info(
@@ -905,10 +900,10 @@ class SimpleMaskRefinementTrainLoop:
                     
                     Board().write(write_dict)
 
-                if self.step == 1:
+                if self.is_main and self.step == 1:
                     self._save()
 
-                if self.gpu == 0 and self.step % self.save_every_step == 0:
+                if self.is_main and self.step % self.save_every_step == 0:
                     self._save()
 
                 self.step += 1

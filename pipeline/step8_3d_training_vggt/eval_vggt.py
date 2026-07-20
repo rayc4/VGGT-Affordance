@@ -1,19 +1,40 @@
+"""Step 8 (VGGT variant): evaluate the VGGT-conditioned mask refinement model.
+
+Parallel path to pipeline/step8_3d_training/eval_no_diff.py. Requires
+vggt_feat.npy per eval sample (see step7b), e.g.:
+
+    python pipeline/step7b_vggt_feats/extract_vggt_features.py \
+        --data_root scenefun3d --split val --processed_dir data/processed_sam2/val
+
+    python pipeline/step8_3d_training_vggt/eval_vggt.py exp_dir=outputs/<your-exp-dir> gpu=0
+"""
+import os
+import sys
 import glob
 import json
-import os
+import random
 import re
 
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 import hydra
+import numpy as np
+import torch
 from loguru import logger
-from omegaconf import DictConfig, OmegaConf
 from natsort import natsorted
-from dataset.AffordanceDataset import AffordanceDataset
+from omegaconf import DictConfig, OmegaConf
+from torch.utils.data import DataLoader
+
+from dataset.AffordanceDatasetVGGT import AffordanceDatasetVGGT
 from dataset.misc import collate_fn_general
-from models.base import create_model_and_diffusion
+from models.base import create_model
+import models.cdm_vggt  # noqa: F401 -- registers CDMVGGT
 from utils.io import mkdir_if_not_exists, time_str
 from utils.training import load_ckpt
-from torch.utils.data import DataLoader
 from utils.evaluator import Segment3DEvaluator
+
 
 def test(cfg: DictConfig) -> None:
     test_dir = os.path.join(cfg.eval_dir, 'test-' + time_str(Y=False))
@@ -22,21 +43,19 @@ def test(cfg: DictConfig) -> None:
     mkdir_if_not_exists(viz_dir)
     logger.add(os.path.join(test_dir, 'test.log'))
     logger.info('[Configuration]\n' + OmegaConf.to_yaml(cfg) + '\n')
-    logger.info('[Test] ==> Beign testing..')
+    logger.info('[Test] ==> Begin testing..')
 
     if cfg.gpu is not None:
         device = f'cuda:{cfg.gpu}'
     else:
         device = 'cpu'
-    
-    test_dataset = AffordanceDataset(
-        root_dir='scenefun3d',
+
+    test_dataset = AffordanceDatasetVGGT(
+        root_dir=cfg.task.dataset.root_dir,
         split='val',
-        use_processed_data=False,
-        use_division=False,
-        use_processed_data_3=False,
         use_sam2=True,
-        use_sam2_1=False
+        vggt_feat_name=cfg.task.dataset.vggt_feat_name,
+        vggt_feat_root=cfg.task.dataset.vggt_feat_root,
     )
     logger.info(f'Load test dataset size: {len(test_dataset)}')
 
@@ -48,7 +67,7 @@ def test(cfg: DictConfig) -> None:
         shuffle=True,
     )
 
-    model, diffusion = create_model_and_diffusion(cfg, device=device)
+    model = create_model(cfg, device=device)
     model.to(device)
 
     if cfg.checkpoint:
@@ -67,17 +86,14 @@ def test(cfg: DictConfig) -> None:
 
     model.eval()
 
-    B = 1
-    sample_list = []
-
     for i, data in enumerate(test_dataloader):
         logger.info(f"batch index: {i}, case desc_id: {data['c_desc_id']}")
         x = data['pred_mask_local'].to(device)
         x = x.unsqueeze(-1)
 
-        x_kwargs = {}        
+        x_kwargs = {}
         for key in data:
-            if key.startswith('c_') :
+            if key.startswith('c_'):
                 if torch.is_tensor(data[key]):
                     x_kwargs[key] = data[key].to(device)
                 else:
@@ -95,8 +111,10 @@ def test(cfg: DictConfig) -> None:
                     res_dict[key] = data[key][bsi].to(device)
                 else:
                     res_dict[key] = data[key][bsi]
-            
-            evaluator.register([res_dict['c_visit_id']], [res_dict['c_desc_id']], res_dict['gt_mask_local'].squeeze(), pred_mask[bsi].squeeze(), "", device)
+
+            evaluator.register([res_dict['c_visit_id']], [res_dict['c_desc_id']],
+                               res_dict['gt_mask_local'].squeeze(),
+                               pred_mask[bsi].squeeze(), "", device)
 
         if i + 1 >= cfg.task.evaluator.eval_nbatch:
             break
@@ -119,7 +137,7 @@ def test(cfg: DictConfig) -> None:
 @hydra.main(version_base=None, config_path="./configs", config_name="default")
 def main(cfg: DictConfig) -> None:
     SEED = cfg.seed
-    torch.backends.cudnn.benchmark = False     
+    torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     torch.manual_seed(SEED)
     torch.cuda.manual_seed(SEED)
@@ -135,8 +153,4 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == '__main__':
-    import torch
-    import random
-    import numpy as np
-    
     main()

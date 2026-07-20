@@ -8,7 +8,7 @@ tqdm
 open3d
 scipy
 pandas
-transformers
+transformers<5
 git+https://github.com/openai/CLIP.git
 loguru
 omegaconf
@@ -20,3 +20,5 @@ imageio
 scipy
 tabulate
 smplkit
+tensorflow[and-cuda]
+accelerate
