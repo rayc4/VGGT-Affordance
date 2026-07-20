@@ -10,3 +10,4 @@ dataset/__pycache__/
 outputs/
 logs/
 *.DS_Store
+scenefun3d
