@@ -22,7 +22,7 @@ def test(cfg: DictConfig) -> None:
     mkdir_if_not_exists(viz_dir)
     logger.add(os.path.join(test_dir, 'test.log'))
     logger.info('[Configuration]\n' + OmegaConf.to_yaml(cfg) + '\n')
-    logger.info('[Test] ==> Beign testing..')
+    logger.info('[Test] ==> Begin testing..')
 
     if cfg.gpu is not None:
         device = f'cuda:{cfg.gpu}'
