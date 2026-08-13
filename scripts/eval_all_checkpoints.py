@@ -15,6 +15,7 @@ are skipped by default, which makes an interrupted batch safe to resume.
 """
 
 import argparse
+import json
 import os
 from pathlib import Path
 import re
@@ -25,6 +26,7 @@ import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_EVAL_SCRIPT = REPO_ROOT / "pipeline/step8_3d_training/eval_no_diff.py"
+MAP_METRIC_VERSION = "pointwise_average_precision_v1"
 
 
 def natural_key(path: Path):
@@ -47,7 +49,7 @@ def parse_args():
     parser.add_argument("--eval-script", type=Path, default=DEFAULT_EVAL_SCRIPT,
                         help="Hydra evaluation entry point (default: %(default)s)")
     parser.add_argument("--output-dir", type=Path,
-                        help="batch evaluation root (default: EXP/eval/checkpoints)")
+                        help="batch evaluation root (default: EXP/eval)")
     parser.add_argument("--gpu", default="0",
                         help="logical evaluator GPU, or 'null' for CPU (default: %(default)s)")
     parser.add_argument("--cuda-visible-devices",
@@ -72,6 +74,19 @@ def checkpoint_label(checkpoint: Path, checkpoint_dir: Path) -> str:
     return "__".join(relative.parts)
 
 
+def has_current_map_metric(results_path: Path) -> bool:
+    """Return whether adjacent metadata identifies the corrected mAP."""
+    metadata_path = results_path.with_name("metadata.json")
+    try:
+        metadata = json.loads(metadata_path.read_text())
+    except (OSError, TypeError, json.JSONDecodeError):
+        return False
+    return (
+        metadata.get("metric_versions", {}).get("mAP")
+        == MAP_METRIC_VERSION
+    )
+
+
 def main() -> int:
     args, hydra_args = parse_args()
     experiment_dir = args.experiment_dir.expanduser().resolve()
@@ -94,7 +109,7 @@ def main() -> int:
         return 2
 
     output_dir = (args.output_dir.expanduser().resolve()
-                  if args.output_dir else experiment_dir / "eval/checkpoints")
+                  if args.output_dir else experiment_dir / "eval")
 
     iterator = (checkpoint_dir.rglob(args.pattern) if args.recursive
                 else checkpoint_dir.glob(args.pattern))
@@ -120,11 +135,16 @@ def main() -> int:
         label = checkpoint_label(checkpoint, checkpoint_dir)
         checkpoint_output = output_dir / label
         existing_results = list(checkpoint_output.rglob("results.json"))
-        if existing_results and not args.force:
+        current_results = [
+            path for path in existing_results if has_current_map_metric(path)
+        ]
+        if current_results and not args.force:
             skipped += 1
             print(f"[{index}/{len(checkpoints)}] skip {checkpoint.name} "
-                  f"({len(existing_results)} result file(s) found)")
+                  f"({len(current_results)} current result file(s) found)")
             continue
+        if existing_results and not args.force:
+            print(f"[{index}/{len(checkpoints)}] legacy mAP result found; reevaluate")
 
         if not args.dry_run:
             checkpoint_output.mkdir(parents=True, exist_ok=True)

@@ -17,7 +17,6 @@ from omegaconf import DictConfig, OmegaConf
 from utils.io import Board
 from utils.training import SimpleMaskRefinementTrainLoop
 
-ROOT_DIR = 'scenefun3d'
 SPLIT = 'train'
 
 
@@ -44,6 +43,12 @@ def _cleanup_distributed():
 
 def train(cfg: DictConfig, is_distributed: bool, rank: int, local_rank: int) -> None:
     is_main = rank == 0
+    processed_sam2_dir = os.environ.get('TASA_PROCESSED_SAM2_DIR')
+    if not processed_sam2_dir:
+        raise RuntimeError(
+            'TASA_PROCESSED_SAM2_DIR is required. Run scripts/train.sh with '
+            '<experiment-name> <processed-sam2-dir>.'
+        )
 
     if is_distributed:
         device = f'cuda:{local_rank}'
@@ -53,18 +58,29 @@ def train(cfg: DictConfig, is_distributed: bool, rank: int, local_rank: int) -> 
         device = 'cpu'
     
     train_dataset = AffordanceDataset(
-        root_dir=ROOT_DIR,
+        root_dir='',
+        processed_sam2_dir=processed_sam2_dir,
         split=SPLIT,
         # use_processed_final_train=True
         use_sam2=True,
         require_nonempty_gt=cfg.task.dataset.require_nonempty_gt,
     )
-    logger.info(f'Load train dataset size: {len(train_dataset)}')
+    logger.info(f'Load train dataset size: {len(train_dataset)} frames')
     if train_dataset.num_skipped_empty_gt:
-        logger.info(f'Skipped {train_dataset.num_skipped_empty_gt} samples with an empty '
+        logger.info(f'Skipped {train_dataset.num_skipped_empty_gt} frames with an empty '
                     f'gt_mask_local (require_nonempty_gt=True)')
 
+    val_dataset = AffordanceDataset(
+        root_dir='',
+        processed_sam2_dir=processed_sam2_dir,
+        split='val',
+        use_sam2=True,
+        require_nonempty_gt=False,
+    )
+    logger.info(f'Load validation dataset size: {len(val_dataset)} frames')
+
     train_sampler = DistributedSampler(train_dataset, shuffle=True) if is_distributed else None
+    val_sampler = DistributedSampler(val_dataset, shuffle=False) if is_distributed else None
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=cfg.task.train.batch_size,
@@ -72,6 +88,14 @@ def train(cfg: DictConfig, is_distributed: bool, rank: int, local_rank: int) -> 
         num_workers=cfg.task.train.num_workers,
         shuffle=train_sampler is None,
         sampler=train_sampler,
+    )
+    val_dataloader = DataLoader(
+        val_dataset,
+        batch_size=cfg.task.train.val_batch_size,
+        collate_fn=collate_fn_general,
+        num_workers=cfg.task.train.val_num_workers,
+        shuffle=False,
+        sampler=val_sampler,
     )
 
     model, _ = create_model_and_diffusion(cfg, device=device)
@@ -83,8 +107,10 @@ def train(cfg: DictConfig, is_distributed: bool, rank: int, local_rank: int) -> 
         cfg=cfg.task.train,
         model=model,
         dataloader=train_dataloader,
+        val_dataloader=val_dataloader,
         device=device,
         save_dir=cfg.ckpt_dir,
+        eval_dir=cfg.eval_dir,
         is_main=is_main,
         is_distributed=is_distributed,
     ).run_loop()

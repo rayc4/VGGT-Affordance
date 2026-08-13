@@ -1,24 +1,45 @@
-## task
-name: '3d affordance mask refinement with lifted VGGT features'
-
 ## train (consumed by SimpleMaskRefinementTrainLoop)
 train:
   lr: 1e-4
+  ## Optional parameter-name-substring learning-rate multipliers. Names are
+  ## matched after removing DistributedDataParallel's leading "module.".
+  lr_multipliers: {}
+  ## Keep the default-LR parameter group and its optimizer moments untouched
+  ## for this many initial steps while non-default groups warm up.
+  base_freeze_steps: 0
   batch_size: 64
   num_workers: 4
-  max_steps: 200000
+  val_batch_size: 32
+  val_num_workers: 2
+  max_steps: 50000
   log_every_step: 100
-  save_every_step: 10000
 
   resume_ckpt: ''
-  weight_decay: 0.0
+  ## Optional model-only initialization checkpoint. Unlike resume_ckpt, this
+  ## starts a fresh optimizer and early-stopping history.
+  init_ckpt: 'outputs/2026-07-29_20-29-16_base/ckpt/mask_refinement_model_best.pt'
+  weight_decay: 1e-4
   lr_anneal_steps: 0
-
-  mask_loss_weight: 1.0
-  geometry_loss_weight: 0.1
-  boundary_loss_weight: 0.5
-  smoothness_loss_weight: 0.1
-  consistency_loss_weight: 0.2
+  bce_loss_weight: 0.15
+  dice_loss_weight: 0.35
+  focal_loss_weight: 0.15
+  iou_loss_weight: 0.35
+  focal_alpha: 0.75
+  focal_gamma: 2.0
+  validation_threshold: 0.5
+  validate_every_epoch: 1
+  ## When enabled, checkpoint/evaluate the zero-residual initialization at
+  ## epoch 0 so adapter training cannot discard a stronger base checkpoint.
+  validate_before_training: false
+  ## Macro per-frame pointwise AP computed from continuous probabilities.
+  early_stopping_metric: mAP
+  early_stopping_mode: max
+  ## Optional eligibility constraint: among checkpoints at or above this
+  ## hard-mask AP50 floor, retain the one with the highest monitored metric.
+  best_checkpoint_ap50_floor: null
+  early_stopping_patience: 15
+  early_stopping_min_delta: 0.0
+  early_stopping_warmup_epochs: 10
 
 ## test
 test:
@@ -27,13 +48,22 @@ test:
 
 ## dataset
 dataset:
-  root_dir: 'data'
+  root_dir: 'scenefun3d'
+  ## Optional explicit processed_sam2 tree; null uses <root_dir>/processed_sam2.
+  processed_sam2_dir: null
   split: 'train'
   num_points: 8192
-  ## per-sample feature file written by step7b
-  vggt_feat_name: 'vggt_feat.npy'
-  ## set if extraction used --feat_out_root (mirror tree); null = next to sample files
-  vggt_feat_root: null
+  ## Drop frame crops whose gt_mask_local is empty.
+  require_nonempty_gt: true
+  ## Optional strict cardinality checks used by controlled ablations.
+  expected_train_frames: null
+  expected_val_frames: null
+  ## per-sample feature and reliability files written by step7b
+  vggt_feat_name: 'vggt_feat_uniform.npy'
+  vggt_conf_name: 'vggt_conf.npy'
+  vggt_view_count_name: 'vggt_view_count.npy'
+  ## Common mirror root; contains train/ and val/ below it.
+  vggt_feat_root: 'scenefun3d/processed_sam2/vggt_features'
 
 ## evaluation
 evaluator:

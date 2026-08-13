@@ -3,22 +3,88 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+usage() {
+    cat >&2 <<EOF
+Usage:
+  $0 <experiment-name> <processed-sam2-dir> [hydra overrides...]
+  EXP_NAME=<experiment-name> $0 <processed-sam2-dir> [hydra overrides...]
+  EXP_NAME=<experiment-name> TASA_PROCESSED_SAM2_DIR=<dir> $0 [hydra overrides...]
+EOF
+}
+
 EXP_NAME="${EXP_NAME:-}"
-if [[ $# -gt 0 && "$1" != *=* ]]; then
+TASA_PROCESSED_SAM2_DIR="${TASA_PROCESSED_SAM2_DIR:-scenefun3d/processed_sam2}"
+
+# Preserve the original two-positional-argument interface. When exactly one
+# leading positional value is supplied, fill whichever required value was not
+# provided through the environment.
+if [[ $# -ge 2 && "$1" != *=* && "$2" != *=* ]]; then
     EXP_NAME="$1"
+    TASA_PROCESSED_SAM2_DIR="$2"
+    shift 2
+elif [[ $# -ge 1 && "$1" != *=* ]]; then
+    if [[ -n "$EXP_NAME" && -z "$TASA_PROCESSED_SAM2_DIR" ]]; then
+        TASA_PROCESSED_SAM2_DIR="$1"
+    elif [[ -z "$EXP_NAME" && -n "$TASA_PROCESSED_SAM2_DIR" ]]; then
+        EXP_NAME="$1"
+    else
+        echo "Cannot determine whether '$1' is the experiment name or processed dataset directory." >&2
+        usage
+        exit 1
+    fi
     shift
 fi
 
+if [[ -z "$EXP_NAME" || -z "$TASA_PROCESSED_SAM2_DIR" ]]; then
+    echo "Both EXP_NAME and TASA_PROCESSED_SAM2_DIR are required." >&2
+    usage
+    exit 1
+fi
+if [[ $# -gt 0 && "$1" != *=* ]]; then
+    echo "Unexpected positional argument: $1" >&2
+    usage
+    exit 1
+fi
+export TASA_PROCESSED_SAM2_DIR
+
+if ! command -v conda >/dev/null 2>&1; then
+    echo "Conda is required to activate the 'pt' environment." >&2
+    exit 1
+fi
+CONDA_BASE="$(conda info --base)"
+CONDA_SH="${CONDA_BASE}/etc/profile.d/conda.sh"
+if [[ ! -f "$CONDA_SH" ]]; then
+    echo "Conda activation script not found: ${CONDA_SH}" >&2
+    exit 1
+fi
+# shellcheck source=/dev/null
+set +u
+if ! source "$CONDA_SH"; then
+    set -u
+    echo "Unable to initialize Conda from ${CONDA_SH}." >&2
+    exit 1
+fi
+if conda activate pt; then
+    CONDA_ACTIVATED=1
+else
+    CONDA_ACTIVATED=0
+fi
+set -u
+if [[ "$CONDA_ACTIVATED" -ne 1 ]]; then
+    echo "Unable to activate the Conda environment 'pt'." >&2
+    exit 1
+fi
+echo "Conda environment: ${CONDA_DEFAULT_ENV}"
+
 # Select GPUs with GPUS=0,2 (comma-separated indices); overrides CUDA_VISIBLE_DEVICES.
-GPUS="${GPUS:-4,5,6,7}"
+GPUS="${GPUS:-0,1,2,3}"
 export CUDA_VISIBLE_DEVICES="$GPUS"
 
 OUTPUT_DIR="${OUTPUT_DIR:-outputs}"
 RUN_ID="${RUN_ID:-$(date +%Y-%m-%d_%H-%M-%S)}"
 EXP_DIR="${EXP_DIR:-${OUTPUT_DIR}/${RUN_ID}_${EXP_NAME}}"
 GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-${BATCH_SIZE:-64}}"
-MAX_STEPS="${MAX_STEPS:-200000}"
-SAVE_EVERY_STEP="${SAVE_EVERY_STEP:-5000}"
+MAX_STEPS="${MAX_STEPS:-50000}"
 
 count_visible_gpus() {
     if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
@@ -82,6 +148,7 @@ fi
 echo "Launching training with ${GPU_COUNT} GPU process(es). CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "Global batch size: ${GLOBAL_BATCH_SIZE}; per-GPU batch size: ${PER_GPU_BATCH_SIZE}"
 echo "Experiment directory: ${EXP_DIR}"
+echo "Processed dataset: ${TASA_PROCESSED_SAM2_DIR}"
 
 cd "$REPO_ROOT"
 
@@ -89,12 +156,12 @@ PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
 "${LAUNCH[@]}" pipeline/step8_3d_training/train_no_diff.py \
             hydra/job_logging=none \
             hydra/hydra_logging=none \
+            exp_name="${EXP_NAME}" \
             exp_dir="${EXP_DIR}" \
             platform=TensorBoard \
             task=contact_gen \
             task.train.batch_size="${PER_GPU_BATCH_SIZE}" \
             task.train.max_steps="${MAX_STEPS}" \
-            task.train.save_every_step="${SAVE_EVERY_STEP}" \
             task.dataset.num_points=8192 \
             model=cdm \
             "$GPU_ARG" \

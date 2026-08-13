@@ -1,0 +1,20 @@
+name: CDMVGGTAdditiveStem
+
+## Preserve the checkpointed one-channel mask stem and inject the source DPT
+## descriptor into its 32-D output before neighborhood attention.
+input_feats: 1
+vggt_feat_dim: 128
+stem_dim: 32
+
+## The launcher warms up the new VGGT path before updating the PointTransformer
+## and contact head at a lower learning rate. Keep checkpoint BatchNorm running
+## statistics fixed throughout the joint fine-tuning stage.
+freeze_base: false
+freeze_batchnorm: true
+require_init_ckpt: true
+
+scene_model:
+  name: 'PointTransformerSeg'
+  num_points: ${task.dataset.num_points}
+  pretrained_weight:
+  freeze: false

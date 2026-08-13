@@ -1,0 +1,20 @@
+name: CDMVGGTAdapter
+
+## Preserve the mask-only PointTransformer path and train only a
+## zero-initialized residual adapter over the dense VGGT point-head latent.
+input_feats: 1
+use_vggt: true
+use_reliability: true
+reliability_mode: relative
+freeze_base: true
+
+## Step 7b's recommended --feature_source dpt representation is the pretrained
+## 128-D tensor immediately before the point head's XYZ/confidence predictor.
+vggt_feat_dim: 128
+adapter_hidden_dim: 128
+
+scene_model:
+  name: 'PointTransformerSeg'
+  num_points: ${task.dataset.num_points}
+  pretrained_weight:
+  freeze: false

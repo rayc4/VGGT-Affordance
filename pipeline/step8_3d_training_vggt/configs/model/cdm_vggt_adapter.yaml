@@ -1,0 +1,23 @@
+name: CDMVGGTAdapter
+
+## Preserve the mask-only PointTransformer input path.
+input_feats: 1
+
+## Ablation switches.
+use_vggt: true
+use_reliability: true
+## Preserve the original one-channel within-sample confidence input.
+reliability_mode: relative
+## When true, optimize only vggt_adapter and keep the initialized
+## PointTransformer/contact head (including BatchNorm buffers) fixed.
+freeze_base: false
+
+## Residual adapter dimensions.
+vggt_feat_dim: 256
+adapter_hidden_dim: 128
+
+scene_model:
+  name: 'PointTransformerSeg'
+  num_points: ${task.dataset.num_points}
+  pretrained_weight:
+  freeze: false

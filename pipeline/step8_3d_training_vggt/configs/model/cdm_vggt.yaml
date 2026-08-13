@@ -7,14 +7,23 @@ input_feats: 1
 ## (2048 if extraction ran with --out_dim 0, i.e. raw aggregator tokens)
 vggt_feat_dim: 256
 
-## width of the learned projection concatenated with the mask channel;
+## width of the learned projection; a point-wise, channel-wise learned gate is
+## conditioned on VGGT confidence and view count before the projected features
+## are concatenated with the mask channel.
 ## PointTransformerSeg input dim becomes input_feats + vggt_proj_dim
 vggt_proj_dim: 32
+
+## Optional controlled-training switches. The historical early-fusion model
+## used one monolithic 33-channel stem; the split stem is algebraically
+## equivalent but permits exact mask-only initialization and a separate LR for
+## the new VGGT columns.
+split_input_stem: false
+freeze_base: false
+freeze_batchnorm: false
 
 ## scene backbone (same as the CDM path)
 scene_model:
   name: 'PointTransformerSeg'
   num_points: ${task.dataset.num_points}
-  point_feat_dim: 32
   pretrained_weight:
   freeze: false

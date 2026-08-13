@@ -1,0 +1,19 @@
+name: CDMVGGTAdditiveStem
+
+## Preserve the checkpointed one-channel mask stem. The dense DPT descriptor
+## is projected directly into its 32-D output before neighborhood attention.
+input_feats: 1
+vggt_feat_dim: 128
+stem_dim: 32
+
+## Train only LayerNorm, the zero-initialized 128->32 projection, and two
+## scalar confidence-gate parameters. PointTransformer/contact weights and
+## BatchNorm buffers remain fixed.
+freeze_base: true
+require_init_ckpt: true
+
+scene_model:
+  name: 'PointTransformerSeg'
+  num_points: ${task.dataset.num_points}
+  pretrained_weight:
+  freeze: false

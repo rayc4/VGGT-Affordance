@@ -1,0 +1,20 @@
+name: CDMVGGT
+
+## Preserve the mask-only 1->32 stem, then fuse a gated 32-D VGGT projection
+## with its completed 32-D mask embedding. The 64->32 fusion is residual and
+## zero-initialized, so epoch-0 logits exactly match the base checkpoint.
+input_feats: 1
+vggt_feat_dim: 256
+vggt_proj_dim: 32
+
+split_input_stem: false
+post_stem_fusion: true
+freeze_base: false
+freeze_batchnorm: true
+require_init_ckpt: true
+
+scene_model:
+  name: 'PointTransformerSeg'
+  num_points: ${task.dataset.num_points}
+  pretrained_weight:
+  freeze: false

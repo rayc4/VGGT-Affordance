@@ -307,35 +307,45 @@ def get_affordance_info(split, visit_id, video_id, desc_id):
         print(f"Failed to read affordance: {json_path}, {e}")
     return None
 
+
+def resolve_io_directories(input_root, output_root, split):
+    input_base = (
+        input_root
+        or 'pipeline/step4_crop_images/seg_image_output/'
+           'point_clipwithaffordance_output'
+    )
+    output_base = output_root or 'pipeline/step5_molmo_sam/molmo_output'
+    return (
+        os.path.join(input_base, split),
+        os.path.join(output_base, split),
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Step 5: Molmo pointing + SAM segmentation on crop images")
     parser.add_argument('--split', required=True, choices=['train', 'val'])
     parser.add_argument('--data_root', default='scenefun3d',
                         help='Dataset root containing benchmark_file_lists')
-    parser.add_argument('--root_dir', default=None,
-                        help='Split-specific Step 4 input (default: .../point_clipwithaffordance_output/<split>)')
+    parser.add_argument('--input_root', '--input-root', '--root_dir', default=None,
+                        help='Step 4 root; <split> is appended')
     parser.add_argument('--output_root', default=None,
-                        help='Split-specific output (default: .../molmo_output/<split>)')
+                        help='Output root; <split> is appended')
     parser.add_argument('--num_shards', type=int, default=1, help="total number of parallel shards")
     parser.add_argument('--shard', type=int, default=0, help="index of this shard in [0, num_shards)")
     args = parser.parse_args()
     if not (0 <= args.shard < args.num_shards):
         raise ValueError(f"--shard must be in [0, {args.num_shards}), got {args.shard}")
-    if args.root_dir is None:
-        args.root_dir = os.path.join(
-            'pipeline/step4_crop_images/seg_image_output/point_clipwithaffordance_output',
-            args.split,
-        )
-    if args.output_root is None:
-        args.output_root = os.path.join(
-            'pipeline/step5_molmo_sam/molmo_output', args.split
-        )
-    if not os.path.isdir(args.root_dir):
-        raise FileNotFoundError(f"Step 4 split input not found: {args.root_dir}")
+    input_dir, output_dir = resolve_io_directories(
+        args.input_root, args.output_root, args.split
+    )
+    if not os.path.isdir(input_dir):
+        raise FileNotFoundError(f"Step 4 split input not found: {input_dir}")
 
     allowed_visit_ids = load_split_visit_ids(args.data_root, args.split)
-    os.makedirs(args.output_root, exist_ok=True)
-    crop_images = sorted(find_crop_images(args.root_dir, args.split, allowed_visit_ids))
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"Input: {input_dir}")
+    print(f"Output: {output_dir}")
+    crop_images = sorted(find_crop_images(input_dir, args.split, allowed_visit_ids))
     print(f"Found {len(crop_images)} _crop.jpg image(s) total")
     crop_images = crop_images[args.shard::args.num_shards]
     print(f"Shard {args.shard}/{args.num_shards}: {len(crop_images)} image(s)")
@@ -344,7 +354,7 @@ def main():
     for item in crop_images:
         img_path, split, visit_id, video_id, desc_id, fname = item
         image_name = os.path.splitext(fname)[0]
-        mask_data_path = os.path.join(args.output_root, visit_id, video_id, desc_id, f"{image_name}_mask_data.npz")
+        mask_data_path = os.path.join(output_dir, visit_id, video_id, desc_id, f"{image_name}_mask_data.npz")
         if not os.path.exists(mask_data_path):
             pending.append(item)
     print(f"{len(crop_images) - len(pending)} already done, {len(pending)} to process")
@@ -362,7 +372,7 @@ def main():
             prompt = f"point to {affordance_info}"
         else:
             prompt = "point to the affordance."
-        out_dir = os.path.join(args.output_root, visit_id, video_id, desc_id)
+        out_dir = os.path.join(output_dir, visit_id, video_id, desc_id)
         os.makedirs(out_dir, exist_ok=True)
         image_name = os.path.splitext(fname)[0]
         process_single_image(

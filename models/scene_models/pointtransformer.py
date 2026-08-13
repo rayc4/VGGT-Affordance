@@ -163,7 +163,14 @@ class PointTransformerSeg(nn.Module):
             layers.append(block(self.in_planes, self.in_planes, share_planes, nsample=nsample))
         return nn.Sequential(*layers)
 
-    def forward(self, pxo):
+    def forward(self, pxo, stem_residual=None):
+        """Encode and decode a point cloud, optionally conditioning the stem.
+
+        ``stem_residual`` is added after the checkpointed stride-one input stem
+        and before the first neighborhood-attention block. Leaving it as
+        ``None`` preserves the original forward exactly and adds no state-dict
+        keys, so mask-only checkpoints remain directly compatible.
+        """
         if len(pxo) == 3:
             p0, x0, o0 = pxo
         elif len(pxo) == 2:
@@ -179,7 +186,21 @@ class PointTransformerSeg(nn.Module):
             o0 = torch.IntTensor(offset).to(p0.device)
         else:
             raise ValueError('Input must be (p, x, o) or (p, x)')
-        p1, x1, o1 = self.enc1([p0, x0, o0])
+        p1, x1, o1 = self.enc1[0]([p0, x0, o0])
+        if stem_residual is not None:
+            if stem_residual.ndim == 3:
+                stem_residual = rearrange(
+                    stem_residual, 'b n d -> (b n) d'
+                )
+            if stem_residual.shape != x1.shape:
+                raise ValueError(
+                    'stem_residual must match the stride-one stem output: '
+                    f'expected {tuple(x1.shape)}, got '
+                    f'{tuple(stem_residual.shape)}'
+                )
+            x1 = x1 + stem_residual.to(dtype=x1.dtype, device=x1.device)
+        for layer_idx in range(1, len(self.enc1)):
+            p1, x1, o1 = self.enc1[layer_idx]([p1, x1, o1])
         p2, x2, o2 = self.enc2([p1, x1, o1])
         p3, x3, o3 = self.enc3([p2, x2, o2])
         p4, x4, o4 = self.enc4([p3, x3, o3])
@@ -311,4 +332,3 @@ if __name__ == '__main__':
     seg_x = seg_model([p, x])
 
     print(enc_x.shape, seg_x.shape)
-    

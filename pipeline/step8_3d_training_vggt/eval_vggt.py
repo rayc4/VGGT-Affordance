@@ -1,7 +1,7 @@
 """Step 8 (VGGT variant): evaluate the VGGT-conditioned mask refinement model.
 
-Parallel path to pipeline/step8_3d_training/eval_no_diff.py. Requires
-vggt_feat.npy per eval sample (see step7b), e.g.:
+Parallel path to pipeline/step8_3d_training/eval_no_diff.py. Requires the VGGT
+feature, confidence, and view-count arrays per eval sample (see step7b), e.g.:
 
     python pipeline/step7b_vggt_feats/extract_vggt_features.py \
         --data_root scenefun3d --split val --processed_dir data/processed_sam2/val
@@ -34,6 +34,7 @@ import models.cdm_vggt  # noqa: F401 -- registers CDMVGGT
 from utils.io import mkdir_if_not_exists, time_str
 from utils.training import load_ckpt
 from utils.evaluator import Segment3DEvaluator
+from utils.metrics import MAP_METRIC_VERSION
 
 
 def test(cfg: DictConfig) -> None:
@@ -54,10 +55,15 @@ def test(cfg: DictConfig) -> None:
         root_dir=cfg.task.dataset.root_dir,
         split='val',
         use_sam2=True,
+        processed_sam2_dir=cfg.task.dataset.processed_sam2_dir,
         vggt_feat_name=cfg.task.dataset.vggt_feat_name,
+        vggt_conf_name=cfg.task.dataset.vggt_conf_name,
+        vggt_view_count_name=cfg.task.dataset.vggt_view_count_name,
         vggt_feat_root=cfg.task.dataset.vggt_feat_root,
+        load_vggt=bool(cfg.model.get('use_vggt', True)),
+        load_reliability=bool(cfg.model.get('use_reliability', True)),
     )
-    logger.info(f'Load test dataset size: {len(test_dataset)}')
+    logger.info(f'Load test dataset size: {len(test_dataset)} frames')
 
     test_dataloader = DataLoader(
         test_dataset,
@@ -75,21 +81,32 @@ def test(cfg: DictConfig) -> None:
         if not os.path.isfile(checkpoint):
             raise FileNotFoundError(f'Checkpoint not found: {checkpoint}')
     else:
-        ckpts = natsorted(glob.glob(os.path.join(cfg.exp_dir, 'ckpt', 'mask_refinement_model*.pt')))
-        assert len(ckpts) > 0, 'No checkpoint found.'
-        checkpoint = ckpts[-1]
+        best_checkpoint = os.path.join(
+            cfg.exp_dir, 'ckpt', 'mask_refinement_model_best.pt'
+        )
+        if os.path.isfile(best_checkpoint):
+            checkpoint = best_checkpoint
+        else:
+            ckpts = natsorted(glob.glob(
+                os.path.join(cfg.exp_dir, 'ckpt', 'mask_refinement_model[0-9]*.pt')
+            ))
+            assert len(ckpts) > 0, 'No checkpoint found.'
+            checkpoint = ckpts[-1]
     load_ckpt(model, checkpoint, map_location=device)
     logger.info(f'Load checkpoint from {checkpoint}')
 
     exp_tag = f"{cfg.eval_dir}"
-    evaluator = Segment3DEvaluator(exp_tag=exp_tag, viz_dir=viz_dir)
+    evaluator = Segment3DEvaluator(
+        exp_tag=exp_tag,
+        viz_dir=viz_dir,
+        threshold=cfg.task.train.validation_threshold,
+    )
 
     model.eval()
 
     for i, data in enumerate(test_dataloader):
         logger.info(f"batch index: {i}, case desc_id: {data['c_desc_id']}")
-        x = data['pred_mask_local'].to(device)
-        x = x.unsqueeze(-1)
+        x = data['pred_mask_local'].to(device).unsqueeze(-1)
 
         x_kwargs = {}
         for key in data:
@@ -99,22 +116,17 @@ def test(cfg: DictConfig) -> None:
                 else:
                     x_kwargs[key] = data[key]
         with torch.no_grad():
-            pred_mask = model(x, **x_kwargs)
-        pred_mask = pred_mask.squeeze(-1)
-        pred_mask = torch.sigmoid(pred_mask)
-        pred_mask = (pred_mask > 0.5).float()
+            pred_mask = torch.sigmoid(model(x, **x_kwargs).squeeze(-1))
 
-        for bsi in range(len(pred_mask)):
-            res_dict = {}
-            for key in data:
-                if torch.is_tensor(data[key]):
-                    res_dict[key] = data[key][bsi].to(device)
-                else:
-                    res_dict[key] = data[key][bsi]
-
-            evaluator.register([res_dict['c_visit_id']], [res_dict['c_desc_id']],
-                               res_dict['gt_mask_local'].squeeze(),
-                               pred_mask[bsi].squeeze(), "", device)
+        for batch_index in range(pred_mask.shape[0]):
+            evaluator.register(
+                [data['c_visit_id'][batch_index]],
+                [data['c_desc_id'][batch_index]],
+                data['gt_mask_local'][batch_index].to(device).squeeze(),
+                pred_mask[batch_index].squeeze(),
+                "",
+                device,
+            )
 
         if i + 1 >= cfg.task.evaluator.eval_nbatch:
             break
@@ -125,10 +137,17 @@ def test(cfg: DictConfig) -> None:
         evaluator.save(f)
 
     step_match = re.search(r'model(\d+)\.pt$', os.path.basename(checkpoint))
+    checkpoint_step = int(step_match.group(1)) if step_match else None
+    if checkpoint_step is None and os.path.basename(checkpoint) == 'mask_refinement_model_best.pt':
+        best_info_path = os.path.join(os.path.dirname(checkpoint), 'best_checkpoint.json')
+        if os.path.isfile(best_info_path):
+            with open(best_info_path, 'r') as f:
+                checkpoint_step = json.load(f).get('step')
     with open(os.path.join(test_dir, 'metadata.json'), 'w') as f:
         json.dump({
             'checkpoint': os.path.abspath(checkpoint),
-            'checkpoint_step': int(step_match.group(1)) if step_match else None,
+            'checkpoint_step': checkpoint_step,
+            'metric_versions': {'mAP': MAP_METRIC_VERSION},
         }, f, indent=2)
 
     logger.info(f'Save results to {os.path.join(test_dir, "results.json")}')

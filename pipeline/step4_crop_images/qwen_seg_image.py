@@ -46,11 +46,10 @@ def crop_image_gpu(image_path, center_x, center_y, width, height, output_dir, im
     marked_output_path = os.path.join(output_dir, f"{name}_marked{ext}")
     marked_image.save(marked_output_path)
 
-def process_all_images(data_root, split, width, height, output_root, raw_data_root, device):
-    split_dir = os.path.join(data_root, split)
+def process_all_images(input_dir, split, width, height, output_dir, raw_data_root, device):
     json_files = []
-    for visit_id in os.listdir(split_dir):
-        visit_path = os.path.join(split_dir, visit_id)
+    for visit_id in os.listdir(input_dir):
+        visit_path = os.path.join(input_dir, visit_id)
         if not os.path.isdir(visit_path):
             continue
         for fname in os.listdir(visit_path):
@@ -59,7 +58,7 @@ def process_all_images(data_root, split, width, height, output_root, raw_data_ro
     total_frames = 0
     for visit_id, fname in json_files:
         video_id = fname.replace('_point.json', '')
-        json_path = os.path.join(split_dir, visit_id, fname)
+        json_path = os.path.join(input_dir, visit_id, fname)
         with open(json_path, 'r') as f:
             data = json.load(f)
         for desc_data in data:
@@ -70,7 +69,7 @@ def process_all_images(data_root, split, width, height, output_root, raw_data_ro
     pbar = tqdm(total=total_frames, desc='Cropping images')
     for visit_id, fname in json_files:
         video_id = fname.replace('_point.json', '')
-        json_path = os.path.join(split_dir, visit_id, fname)
+        json_path = os.path.join(input_dir, visit_id, fname)
         with open(json_path, 'r') as f:
             data = json.load(f)
         for desc_data in data:
@@ -86,7 +85,7 @@ def process_all_images(data_root, split, width, height, output_root, raw_data_ro
                 center_x, center_y = coordinates['x'], coordinates['y']
                 raw_split_dir = "train_val_set" if split in ('train', 'val') else "test_set"
                 raw_img_path = os.path.join(raw_data_root, raw_split_dir, visit_id, video_id, "hires_wide", image_name)
-                out_dir = os.path.join(output_root, split, visit_id, video_id, desc_id)
+                out_dir = os.path.join(output_dir, visit_id, video_id, desc_id)
                 image_prefix = f"frame{idx}"
                 try:
                     crop_image_gpu(raw_img_path, center_x, center_y, width, height, out_dir, image_name_prefix=image_prefix, device=device)
@@ -95,20 +94,64 @@ def process_all_images(data_root, split, width, height, output_root, raw_data_ro
                 pbar.update(1)
     pbar.close()
 
+
+def resolve_io_directories(args):
+    if args.input_root:
+        input_base = args.input_root
+        input_name = os.path.basename(os.path.normpath(args.input_root))
+    else:
+        input_base = args.data_root
+        input_name = os.path.basename(os.path.normpath(args.data_root))
+    input_dir = os.path.join(input_base, args.split)
+
+    if args.output_root:
+        output_base = args.output_root
+    else:
+        output_base = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'seg_image_output',
+            input_name,
+        )
+    output_dir = os.path.join(output_base, args.split)
+    return input_dir, output_dir
+
+
 def main():
     parser = argparse.ArgumentParser(description="Crop image regions centered at given points (GPU supported)")
-    parser.add_argument('--data_root', type=str, default='pipeline/step3_point_prediction/point_clipwithaffordance_output', help='Path to point output, e.g. path/to/point_clipwithaffordance_output')
+    parser.add_argument(
+        '--input_root', '--input-root', type=str, default=None,
+        help='Step 3 root containing <split>/<visit_id>/*_point.json',
+    )
+    parser.add_argument(
+        '--output_root', '--output-root', type=str, default=None,
+        help='Output root; cropped images and metadata go under <split>/',
+    )
+    parser.add_argument(
+        '--data_root', type=str,
+        default='pipeline/step3_point_prediction/point_clipwithaffordance_output',
+        help='Legacy Step 3 root; <split> is appended (ignored with --input_root)',
+    )
     parser.add_argument('--raw_data_root', type=str, default='scenefun3d', help='Path to raw data (images)')
-    parser.add_argument('--split', type=str, required=True, help='Split: train/val/test')
+    parser.add_argument('--split', type=str, required=True, choices=['train', 'val', 'test'], help='Dataset split')
     parser.add_argument('--size', type=int, nargs=2, default=[512, 512], metavar=('W', 'H'), help='Crop width and height (default: 512 512)')
     args = parser.parse_args()
-    data_root = args.data_root
-    split = args.split
+    input_dir, output_dir = resolve_io_directories(args)
+    if not os.path.isdir(input_dir):
+        raise FileNotFoundError(
+            f"Step 4 input directory not found: {input_dir}. "
+            "Expected --input_root to contain the requested split directory."
+        )
+
     width, height = args.size
-    output_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'seg_image_output', os.path.basename(data_root))
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Device: {device}")
-    process_all_images(data_root, split, width, height, output_root, args.raw_data_root, device)
+    print(f"Input: {input_dir}")
+    print(f"Output: {output_dir}")
+    os.makedirs(output_dir, exist_ok=True)
+    process_all_images(
+        input_dir, args.split, width, height, output_dir,
+        args.raw_data_root, device,
+    )
 
 if __name__ == '__main__':
     main()

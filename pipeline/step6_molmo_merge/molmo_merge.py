@@ -7,28 +7,25 @@ from tqdm import tqdm
 
 MOLMO_ROOT_BASE = 'pipeline/step5_molmo_sam/molmo_output'
 MOLMO_ROOT = MOLMO_ROOT_BASE
-CROPINFO_ROOT = 'pipeline/step4_crop_images/seg_image_output/point_clipwithaffordance_output'
+CROPINFO_ROOT_BASE = 'pipeline/step4_crop_images/seg_image_output/point_clipwithaffordance_output'
+CROPINFO_ROOT = CROPINFO_ROOT_BASE
 BIGIMG_ROOT = 'path/to/raw_data/val'  # unused: original image path comes from each crop json
 MERGE_ROOT_BASE = 'pipeline/step6_molmo_merge/molmo_merge_output'
 MERGE_ROOT = MERGE_ROOT_BASE
 
 
 def resolve_cropinfo_dir(visit_id, video_id, desc_id, splits):
-    for split in splits:
-        candidate = os.path.join(CROPINFO_ROOT, split, visit_id, video_id, desc_id)
-        if os.path.isdir(candidate):
-            return candidate
+    candidate = os.path.join(CROPINFO_ROOT, visit_id, video_id, desc_id)
+    if os.path.isdir(candidate):
+        return candidate
     return None
 
 
 def visits_in_splits(splits):
     """Set of visit_ids that belong to any of the given crop-info splits."""
-    visits = set()
-    for split in splits:
-        split_dir = os.path.join(CROPINFO_ROOT, split)
-        if os.path.isdir(split_dir):
-            visits.update(os.listdir(split_dir))
-    return visits
+    if not os.path.isdir(CROPINFO_ROOT):
+        return set()
+    return set(os.listdir(CROPINFO_ROOT))
 
 
 def merge_mask_to_bigimg(molmo_mask, crop_info, bigimg_shape):
@@ -126,21 +123,38 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Merge molmo/SAM crop masks back into full images.")
     parser.add_argument('--split', choices=['train', 'val'], required=True)
+    parser.add_argument('--cropinfo_root', '--cropinfo-root', default=None,
+                        help='Step 4 crop-metadata root; <split> is appended')
     parser.add_argument('--molmo_root', default=None,
-                        help='Split-specific Step 5 input (default: .../molmo_output/<split>)')
-    parser.add_argument('--merge_root', default=None,
-                        help='Split-specific output (default: .../molmo_merge_output/<split>)')
+                        help='Step 5 input root; <split> is appended')
+    parser.add_argument('--merge_root', '--output_root', default=None,
+                        help='Output root; <split> is appended')
     return parser.parse_args()
 
 
+def resolve_io_directories(args):
+    return (
+        os.path.join(args.cropinfo_root or CROPINFO_ROOT_BASE, args.split),
+        os.path.join(args.molmo_root or MOLMO_ROOT_BASE, args.split),
+        os.path.join(args.merge_root or MERGE_ROOT_BASE, args.split),
+    )
+
+
 def main():
-    global MOLMO_ROOT, MERGE_ROOT
+    global CROPINFO_ROOT, MOLMO_ROOT, MERGE_ROOT
     args = parse_args()
-    MOLMO_ROOT = args.molmo_root or os.path.join(MOLMO_ROOT_BASE, args.split)
-    MERGE_ROOT = args.merge_root or os.path.join(MERGE_ROOT_BASE, args.split)
+    CROPINFO_ROOT, MOLMO_ROOT, MERGE_ROOT = resolve_io_directories(args)
     splits = (args.split,)
+    if not os.path.isdir(CROPINFO_ROOT):
+        raise FileNotFoundError(
+            f"Step 4 crop-info split input not found: {CROPINFO_ROOT}"
+        )
     if not os.path.isdir(MOLMO_ROOT):
         raise FileNotFoundError(f"Step 5 split input not found: {MOLMO_ROOT}")
+    os.makedirs(MERGE_ROOT, exist_ok=True)
+    print(f"Crop info: {CROPINFO_ROOT}")
+    print(f"Input: {MOLMO_ROOT}")
+    print(f"Output: {MERGE_ROOT}")
     allowed_visits = visits_in_splits(splits)
     print(f"Split '{args.split}': {len(allowed_visits)} visit(s) in crop-info splits {splits}")
 

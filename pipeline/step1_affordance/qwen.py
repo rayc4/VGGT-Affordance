@@ -17,10 +17,21 @@ class QwenAffordanceModel:
         )
         self.model.eval()
         self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-        self.AFFORDANCE_PROMPT = """You are an expert in human-computer interaction and affordance analysis. \
-Your task is to identify the specific functional component (affordance) that a person would interact with to perform a given action, and output ONLY the name of the functional component.\n\nGiven a description of an action, provide ONLY the name of the functional component. Be concise and direct.\n\nExamples:\n- Action: \"Close the bedroom door\" → Affordance: handle\n- Action: \"Turn on the light\" → Affordance: switch\n- Action: \"Open the refrigerator\" → Affordance: handle\n- Action: \"Flush the toilet\" → Affordance: button\n- Action: \"Adjust the thermostat\" → Affordance: dial\n- Action: \"Lock the front door\" → Affordance: lock\n- Action: \"Open the window\" → Affordance: handle\n- Action: \"Start the washing machine\" → Affordance: button\n\nNow, analyze this action and identify the functional component:\n\nAction: \"{action_description}\"\n\nAffordance:"""
+        self.AFFORDANCE_PROMPT = """\
+Name the physical component directly manipulated to perform the action.
+Return one concise noun phrase without explanation.
 
-    def generate_response(self, prompt, max_new_tokens=256):
+Examples:
+- "Turn on the light" → switch
+- "Open the refrigerator" → handle
+- "Flush the toilet" → flush button
+- "Adjust the thermostat" → dial
+
+Action: "{action_description}"
+Output only the component name:
+"""*2
+
+    def generate_response(self, prompt, max_new_tokens=16):
         messages = [
             {
                 "role": "user",

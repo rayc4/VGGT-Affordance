@@ -11,6 +11,7 @@ import torch
 import open3d as o3d
 
 from utils.metrics import (
+    compute_average_precision,
     compute_3d_ap,
     compute_3d_ar,
     compute_mean_iou,
@@ -104,27 +105,30 @@ class Segment3DEvaluator(object):
         device: torch.device,
     ):
         """
-        Register metrics mAP,AP50,AP25,mAR,AR50,AR25
+        Register continuous-score mAP and legacy hard-mask metrics.
         """
 
         assert (
             gt_masks.shape == pred_masks.shape
         ), f"Shapes not correponding: {gt_masks.shape} ad {pred_masks.shape}"
 
-        pred_masks = (pred_masks > self.threshold).float()
+        pred_scores = pred_masks.float()
 
-
-        # beacuse function only processes lists
+        # Because the hard-mask helpers only process batches.
         if len(gt_masks.shape) == 1:
             gt_masks = gt_masks.unsqueeze(0)
-            pred_masks = pred_masks.unsqueeze(0)
+            pred_scores = pred_scores.unsqueeze(0)
 
-        # compute ap and relative recalls
+        pred_masks = (pred_scores > self.threshold).float()
+
+        # Standard pointwise AP uses the complete continuous ranking. The
+        # remaining metrics intentionally use the configured hard-mask
+        # threshold for backward-compatible precision/recall/IoU reporting.
+        average_precision = compute_average_precision(gt_masks, pred_scores)
         valid_pred = [torch.count_nonzero(pred_mask).item() for pred_mask in pred_masks]
         valid_gt = [torch.count_nonzero(gt_mask).item() for gt_mask in gt_masks]
         ap_i = compute_3d_ap(gt_masks, pred_masks)
         ious = compute_mean_iou(gt_masks, pred_masks)
-        map = compute_mean_recalls(ap_i.to(device), self.AP_TH.to(device))
         ap_rec = compute_scores(ap_i, [0.25, 0.50])
         ap_50 = ap_rec[0.50]
         ap_25 = ap_rec[0.25]
@@ -141,7 +145,9 @@ class Segment3DEvaluator(object):
         self.metrics["gt_count"].extend(valid_gt)
 
         self.metrics["Prc"].extend(list(ap_i.cpu().numpy().astype(np.float64)))
-        self.metrics["mAP"].extend(list(map.cpu().numpy().astype(np.float64)))
+        self.metrics["mAP"].extend(
+            list(average_precision.cpu().numpy().astype(np.float64))
+        )
         self.metrics["AP50"].extend(list(ap_50.cpu().numpy().astype(np.float64)))
         self.metrics["AP25"].extend(list(ap_25.cpu().numpy().astype(np.float64)))
 

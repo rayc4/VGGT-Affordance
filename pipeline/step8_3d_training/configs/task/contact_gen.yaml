@@ -3,12 +3,32 @@ train:
   lr: 1e-4
   batch_size: 64
   num_workers: 4
-  max_steps: 100000 # max steps to train
+  val_batch_size: 32
+  val_num_workers: 2
+  max_steps: 50000 # hard ceiling; validation early stopping normally ends sooner
   log_every_step: 100 # log every ${log_every_step} steps
-  save_every_step: 10000 # save model every ${save_every_step} steps
   resume_ckpt: '' # resume from checkpoint
-  weight_decay: 0.0
+  weight_decay: 1e-4
   lr_anneal_steps: 0
+  ## Overlap losses and focal weighting address point-level class imbalance.
+  bce_loss_weight: 0.15
+  dice_loss_weight: 0.35
+  focal_loss_weight: 0.15
+  iou_loss_weight: 0.35
+  focal_alpha: 0.75
+  focal_gamma: 2.0
+  validation_threshold: 0.5
+  validate_every_epoch: 1
+  ## Select checkpoints by macro per-frame pointwise AP computed from
+  ## continuous probabilities. Patience is counted in validation runs.
+  early_stopping_metric: mAP
+  early_stopping_mode: max
+  ## Optional eligibility constraint: among checkpoints at or above this
+  ## hard-mask AP50 floor, retain the one with the highest monitored metric.
+  best_checkpoint_ap50_floor: null
+  early_stopping_patience: 15
+  early_stopping_min_delta: 0
+  early_stopping_warmup_epochs: 10
 
 ## test (consumed by eval_no_diff.py)
 test:
@@ -21,11 +41,9 @@ test:
 ## ${task.dataset.num_points}, and require_nonempty_gt is read by train_no_diff.
 dataset:
   num_points: 8192
-  ## Drop samples whose gt_mask_local is all zeros (the crop is centred on the lifted
-  ## prediction, so an off-target prediction leaves the annotation outside the crop).
-  ## ~66% of the train split; keeping them teaches the model to predict empty masks.
+  ## Drop frame crops whose gt_mask_local is empty.
   require_nonempty_gt: true
 
 ## evaluation (only eval_nbatch is read, by eval_no_diff.py)
 evaluator:
-  eval_nbatch: 100
+  eval_nbatch: 99999999

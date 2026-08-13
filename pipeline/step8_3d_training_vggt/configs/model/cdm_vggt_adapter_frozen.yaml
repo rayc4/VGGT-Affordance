@@ -1,0 +1,23 @@
+name: CDMVGGTAdapter
+
+## Preserve the mask-only PointTransformer input path.
+input_feats: 1
+
+## Train the confidence-conditioned residual adapter while preserving the
+## initialized mask-only model exactly.
+use_vggt: true
+use_reliability: true
+## Preserve the original one-channel within-sample confidence input.
+reliability_mode: relative
+freeze_base: true
+
+vggt_feat_dim: 256
+adapter_hidden_dim: 128
+
+scene_model:
+  name: 'PointTransformerSeg'
+  num_points: ${task.dataset.num_points}
+  pretrained_weight:
+  ## freeze_base above is implemented by CDMVGGTAdapter. This legacy field is
+  ## retained because load_scene_model still accepts it.
+  freeze: false

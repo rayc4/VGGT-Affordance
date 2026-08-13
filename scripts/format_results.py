@@ -3,7 +3,7 @@
 Usage:
     python3 scripts/format_results.py                          # newest run under outputs/
     python3 scripts/format_results.py path/to/results.json
-    python3 scripts/format_results.py <run> --worst 10 --best 10
+    python3 scripts/format_results.py <run> --worst 10 --best 10  # best mAP in <run>/eval
     python3 scripts/format_results.py <run> --by-visit
     python3 scripts/format_results.py <run> --csv table.csv
 """
@@ -19,27 +19,61 @@ import sys
 METRICS = ['mAP', 'AP50', 'AP25', 'mAR', 'AR50', 'AR25', 'mIoU', 'Prc', 'Rec']
 LATEX_METRICS = ['mAP', 'AP50', 'AP25', 'mAR', 'AR50', 'AR25', 'mIoU']
 ID_KEYS = ('visit_id', 'annot_id')
+SELECTION_METRIC = 'mAP'
 
 
 def find_latest_results():
     """Newest results.json under outputs/, by mtime."""
-    hits = glob.glob(os.path.join('outputs', '*', 'eval', '*', 'results.json'))
+    hits = glob.glob(
+        os.path.join('outputs', '*', 'eval', '**', 'results.json'),
+        recursive=True,
+    )
     if not hits:
         return None
     return max(hits, key=os.path.getmtime)
 
 
+def result_score(path, metric=SELECTION_METRIC):
+    """Mean checkpoint score, or None when the result cannot be ranked."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        values = data.get(metric)
+        if not isinstance(values, list) or not values:
+            return None
+        numeric = [
+            float(value)
+            for value in values
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        ]
+        return statistics.fmean(numeric) if numeric else None
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def find_best_results(root):
+    """Highest-mean-mAP results.json recursively below root."""
+    hits = glob.glob(os.path.join(root, '**', 'results.json'), recursive=True)
+    ranked = [
+        (score, os.path.getmtime(path), path)
+        for path in hits
+        if (score := result_score(path)) is not None
+    ]
+    return max(ranked)[2] if ranked else None
+
+
 def resolve(path):
-    """Accept a results.json, a test-* dir, or an exp dir."""
+    """Accept a results.json, a test-* dir, or a run/eval directory."""
     if path is None:
         return find_latest_results()
     if os.path.isfile(path):
         return path
-    for pattern in (['results.json'], ['eval', '*', 'results.json']):
-        hits = glob.glob(os.path.join(path, *pattern))
-        if hits:
-            return max(hits, key=os.path.getmtime)
-    return None
+    direct_result = os.path.join(path, 'results.json')
+    if os.path.isfile(direct_result):
+        return direct_result
+    eval_dir = os.path.join(path, 'eval')
+    search_root = eval_dir if os.path.isdir(eval_dir) else path
+    return find_best_results(search_root) if os.path.isdir(search_root) else None
 
 
 def load(path):
@@ -179,7 +213,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('path', nargs='?', help='results.json, a test-* dir, or an exp '
-                                                'dir (default: newest under outputs/)')
+                                                'dir (exp dirs use the best mean mAP under '
+                                                'DIR/eval; default: newest under outputs/)')
     parser.add_argument('--worst', type=int, default=0, metavar='N',
                         help='list the N lowest-mIoU samples')
     parser.add_argument('--best', type=int, default=0, metavar='N',

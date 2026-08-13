@@ -7,11 +7,10 @@ hydra:
 defaults:
   - _self_
   - task: mask_refinement_vggt
-  - model: cdm_vggt
+  - model: cdm_vggt_adapter
 
 ## general
 project: 'tasa-vggt'
-project_desc: '3d affordance mask refinement conditioned on lifted VGGT features'
 
 ## output
 output_dir: 'outputs'

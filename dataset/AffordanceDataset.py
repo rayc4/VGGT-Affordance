@@ -15,7 +15,8 @@ import pdb
 
 class AffordanceDataset(Dataset):
     def __init__(self, root_dir, split, use_processed_data=False, use_division=False, use_processed_data_3=False,
-    use_sam2=False, use_sam2_1=False, use_processed_final_train=False, require_nonempty_gt=False):
+    use_sam2=False, use_sam2_1=False, use_processed_final_train=False, require_nonempty_gt=False,
+    processed_sam2_dir=None):
         self.root_dir = root_dir
         self.split = split
         self.use_processed_data = use_processed_data
@@ -25,22 +26,26 @@ class AffordanceDataset(Dataset):
         self.use_sam2_1 = use_sam2_1
         self.use_processed_final_train = use_processed_final_train
         self.require_nonempty_gt = require_nonempty_gt
+        self.processed_sam2_dir = processed_sam2_dir
         self.num_skipped_empty_gt = 0
 
         if self.use_sam2:
-            self.processed_dir = os.path.join(root_dir, 'processed_sam2', split)
+            if self.processed_sam2_dir is None:
+                self.processed_dir = os.path.join(root_dir, 'processed_sam2', split)
+            else:
+                self.processed_dir = os.path.join(self.processed_sam2_dir, split)
             if not os.path.exists(self.processed_dir):
                 raise ValueError(f"Processed dir not found: {self.processed_dir}, run preprocess_data_sam2.py first")
             self.data_items = []
-            for visit_id in os.listdir(self.processed_dir):
+            for visit_id in sorted(os.listdir(self.processed_dir)):
                 visit_path = os.path.join(self.processed_dir, visit_id)
                 if not os.path.isdir(visit_path):
                     continue
-                for scan_id in os.listdir(visit_path):
+                for scan_id in sorted(os.listdir(visit_path)):
                     scan_path = os.path.join(visit_path, scan_id)
                     if not os.path.isdir(scan_path):
                         continue
-                    for desc_id in os.listdir(scan_path):
+                    for desc_id in sorted(os.listdir(scan_path)):
                         desc_path = os.path.join(scan_path, desc_id)
                         if not os.path.isdir(desc_path):
                             continue
@@ -589,4 +594,3 @@ class AffordanceDataset(Dataset):
             full_mask[np.asarray(target_indices, dtype=int)] = 1
         cropped_mask = full_mask[crop_mask == 1]
         return cropped_mask
-        

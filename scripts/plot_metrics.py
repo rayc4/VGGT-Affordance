@@ -26,7 +26,7 @@ EVAL_METRICS = ("mAP", "AP50", "AP25", "mAR", "AR50", "AR25",
                 "mIoU", "Prc", "Rec")
 CHECKPOINT_RE = re.compile(r"mask_refinement_model(\d+)(?:\.pt)?")
 NUMBER_RE = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
-LOG_FIELD_RE = re.compile(rf"([A-Za-z][A-Za-z ]*):\s*({NUMBER_RE})")
+LOG_FIELD_RE = re.compile(rf"([A-Za-z][A-Za-z0-9 ]*):\s*({NUMBER_RE})")
 LOG_FIELD_NAMES = {
     "Epoch": "train/epoch",
     "Loss": "train/total_loss",
@@ -37,6 +37,23 @@ LOG_FIELD_NAMES = {
     "PosRatio": "train/positive_ratio",
     "PredMean": "train/pred_mean",
     "GtMean": "train/gt_mean",
+}
+VALIDATION_LOG_FIELD_NAMES = {
+    "Epoch": "val/epoch",
+    "Loss": "val/loss",
+    "BCE": "val/mask_loss",
+    "Dice": "val/dice_loss",
+    "Focal": "val/focal_loss",
+    "SoftIoU": "val/soft_iou",
+    "Prc": "val/Prc",
+    "Rec": "val/Rec",
+    "mIoU": "val/mIoU",
+    "mAP": "val/mAP",
+    "AP25": "val/AP25",
+    "AP50": "val/AP50",
+    "mAR": "val/mAR",
+    "AR25": "val/AR25",
+    "AR50": "val/AR50",
 }
 
 
@@ -119,14 +136,20 @@ def log_training_rows(root, experiment):
             warn(f"could not read {log_file}: {exc}")
             continue
         for line in lines:
-            if "[MASK REFINEMENT]" not in line or "Step:" not in line:
+            is_validation = "[VALIDATION]" in line
+            if not is_validation and "[MASK REFINEMENT]" not in line:
+                continue
+            if "Step:" not in line:
                 continue
             step_match = re.search(r"\bStep:\s*(\d+)", line)
             if not step_match:
                 continue
             step = int(step_match.group(1))
             for display_name, value in LOG_FIELD_RE.findall(line):
-                metric = LOG_FIELD_NAMES.get(display_name.strip())
+                field_names = (
+                    VALIDATION_LOG_FIELD_NAMES if is_validation else LOG_FIELD_NAMES
+                )
+                metric = field_names.get(display_name.strip())
                 if metric:
                     latest[(metric, step)] = {
                         "experiment": experiment,

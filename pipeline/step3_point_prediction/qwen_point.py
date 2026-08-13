@@ -126,7 +126,7 @@ def load_affordance_results(affordance_root, split, visit_id):
 
 def predict_coordinates_for_image(model, processor, image_path, action_description, affordance_info=None, max_new_tokens=512, enable_validation=True):
     if affordance_info:
-        coordinate_prompt = f"""You are an extremely precise visual localization assistant. Please carefully and comprehensively analyze the image content to find the specific operable functional component that needs to be operated.
+        coordinate_prompt = f"""Please carefully and comprehensively analyze the image content to find the specific operable functional component that needs to be operated.
 
 Action description: "{action_description}"
 Target functional component: "{affordance_info}"
@@ -178,7 +178,7 @@ Important notes:
 
 Please carefully analyze the image and output coordinates:"""
     else:
-        coordinate_prompt = f"""You are an extremely precise visual localization assistant. Please carefully and comprehensively analyze the image content to find the specific operable functional component that needs to be operated.
+        coordinate_prompt = f"""Please carefully and comprehensively analyze the image content to find the specific operable functional component that needs to be operated.
 
 Action description: "{action_description}"
 
@@ -391,7 +391,7 @@ Please answer:"""
     return result
 
 def predict_fallback_possible_point(model, processor, image_path, action_description, max_new_tokens=512, enable_validation=True):
-    fallback_prompt = f"""You are an extremely intelligent visual assistant. In the following image, although you could not find the exact operable functional component (such as a handle, button, or switch) required by the action, please carefully analyze the image and output the most likely location that a person would try to operate in order to complete the action described below.\n\nAction description: \"{action_description}\"\n\nInstructions:\n- If you cannot find the exact target, please output the most likely operable point based on the scene and action.\n- Output the coordinates in the format: (x, y)\n- If you really cannot determine any possible point, output: \"Cannot determine coordinates\"\n\nPlease analyze the image and output the most likely coordinates:"""
+    fallback_prompt = f"""In the following image, although you could not find the exact operable functional component (such as a handle, button, or switch) required by the action, please carefully analyze the image and output the most likely location that a person would try to operate in order to complete the action described below.\n\nAction description: \"{action_description}\"\n\nInstructions:\n- If you cannot find the exact target, please output the most likely operable point based on the scene and action.\n- Output the coordinates in the format: (x, y)\n- If you really cannot determine any possible point, output: \"Cannot determine coordinates\"\n\nPlease analyze the image and output the most likely coordinates:"""
 
     messages = create_messages(image_path, fallback_prompt)
     text = processor.apply_chat_template(
@@ -453,12 +453,15 @@ def load_descriptions(data_root, split, visit_id):
     with open(desc_file, 'r', encoding='utf-8') as f:
         return json.load(f)
 
-def load_clip4_results(clip_root, split, visit_id, video_id):
+def get_clip_result_path(clip_root, split, visit_id, video_id):
     if 'clip4' in os.path.basename(clip_root):
         json_file = f"{video_id}_clip4_result.json"
     else:
         json_file = f"{video_id}_result.json"
-    clip4_file = os.path.join(clip_root, split, visit_id, json_file)
+    return os.path.join(clip_root, split, visit_id, json_file)
+
+def load_clip4_results(clip_root, split, visit_id, video_id):
+    clip4_file = get_clip_result_path(clip_root, split, visit_id, video_id)
     if not os.path.exists(clip4_file):
         print(f"Warning: CLIP4 result file not found: {clip4_file}")
         return None
@@ -583,13 +586,36 @@ def save_results(results, split, visit_id, video_id, output_root):
         json.dump(results, f, ensure_ascii=False, indent=2)
     print(f"Saved to {output_file}")
 
+
+def resolve_output_dir(input_root, output_root, split):
+    if output_root:
+        return os.path.join(output_root, split)
+
+    input_root_base = os.path.basename(input_root.rstrip('/'))
+    if '_output' in input_root_base:
+        input_name = input_root_base.split('_output')[0]
+    else:
+        input_name = input_root_base
+    output_dir_name = f"point_{input_name}_output"
+    return os.path.join(
+        "pipeline/step3_point_prediction", output_dir_name, split
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description='Batch point prediction')
     parser.add_argument('--data_root', type=str, default='scenefun3d', help='Path to data root')
     parser.add_argument('--split', type=str, required=True, choices=['train', 'val'], help='Dataset split')
-    parser.add_argument('--clip_root', type=str, default='pipeline/step2_clipwithaffordance/clipwithaffordance_output', help='Path to CLIP results')
+    parser.add_argument(
+        '--input_root', '--clip_root', dest='input_root', type=str,
+        default='pipeline/step2b_relational_filter/clipwithaffordance_output',
+        help='Step 2/2b input root containing <split>/<visit_id>/*_result.json',
+    )
     parser.add_argument('--affordance_root', type=str, default='pipeline/step1_affordance/affordance_result', help='Path to affordance results')
-    parser.add_argument('--output_root', type=str, default=None, help='Output root (default: path/to/qwen2_output/...)')
+    parser.add_argument(
+        '--output_root', type=str, default=None,
+        help='Output root; <split> is appended before writing <visit_id>/*_point.json',
+    )
     parser.add_argument('--enable_validation', action='store_true', default=True, help='Enable coordinate validation')
     parser.add_argument('--disable_validation', dest='enable_validation', action='store_false', help='Disable coordinate validation')
     parser.add_argument('--num_shards', type=int, default=1, help='Total number of parallel shards (data-parallel across GPUs)')
@@ -602,20 +628,21 @@ def main():
         parser.error(f'--shard must be in [0, {args.num_shards})')
 
     print(f"Data root: {args.data_root}, split: {args.split}")
-    print(f"CLIP root: {args.clip_root}, affordance root: {args.affordance_root}")
+    print(f"Input root: {args.input_root}, affordance root: {args.affordance_root}")
     print(f"Validation: {'on' if args.enable_validation else 'off'}")
 
-    if args.output_root:
-        output_root = args.output_root
-    else:
-        clip_root_base = os.path.basename(args.clip_root.rstrip('/'))
-        if '_output' in clip_root_base:
-            clipr4_part = clip_root_base.split('_output')[0]
-        else:
-            clipr4_part = clip_root_base
-        output_dir_name = f"point_{clipr4_part}_output"
-        output_root = os.path.join("pipeline/step3_point_prediction", output_dir_name, args.split)
+    clip_split_dir = os.path.join(args.input_root, args.split)
+    if not os.path.isdir(clip_split_dir):
+        raise FileNotFoundError(
+            f"Step 3 input split not found: {clip_split_dir}. "
+            f"Expected the input root to contain an {args.split}/ directory."
+        )
+
+    output_root = resolve_output_dir(
+        args.input_root, args.output_root, args.split
+    )
     print(f"Output root: {output_root}")
+    os.makedirs(output_root, exist_ok=True)
 
     model, processor = load_model_and_processor()
 
@@ -635,13 +662,21 @@ def main():
             output_dir = os.path.join(output_root, visit_id)
             output_file = os.path.join(output_dir, f"{video_id}_point.json")
             if os.path.exists(output_file):
-                print(f"  Skip {video_id} (already done)")
-                continue
+                clip_input_file = get_clip_result_path(
+                    args.input_root, args.split, visit_id, video_id
+                )
+                if (
+                    os.path.exists(clip_input_file)
+                    and os.path.getmtime(output_file) >= os.path.getmtime(clip_input_file)
+                ):
+                    print(f"  Skip {video_id} (already up to date)")
+                    continue
+                print(f"  Reprocess {video_id} (Step 3 input is newer)")
             print(f"  Processing {video_id}")
             try:
                 results = process_single_video(
                     model, processor, args.data_root, args.split, visit_id, video_id,
-                    args.clip_root, affordance_map, args.enable_validation
+                    args.input_root, affordance_map, args.enable_validation
                 )
                 if results:
                     save_results(results, args.split, visit_id, video_id, output_root)
@@ -652,4 +687,4 @@ def main():
                 continue
 
 if __name__ == "__main__":
-    main() 
+    main()

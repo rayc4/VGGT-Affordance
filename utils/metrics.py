@@ -8,6 +8,9 @@ from torch import Tensor
 from torch.nn.functional import cosine_similarity
 
 
+MAP_METRIC_VERSION = 'pointwise_average_precision_v1'
+
+
 def get_image_polar_coords(shape: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
     """
     Make polar coordinates mask with a fixed size
@@ -190,6 +193,71 @@ def compute_scores(values: Tensor, thresholds: Optional[list] = [0.25, 0.5]) -> 
     for th in thresholds:
         recalls[th] = (values >= th).to(torch.float)
     return recalls
+
+
+def compute_average_precision(gt_mask: Tensor, pred_scores: Tensor) -> Tensor:
+    """Compute pointwise average precision from continuous prediction scores.
+
+    The metric is computed independently for each row and therefore returns
+    per-frame AP for ``[B, N]`` inputs. A one-dimensional input returns a
+    scalar. Equal-score points are evaluated as one threshold group, matching
+    the precision-recall step integral used by standard AP implementations and
+    avoiding an arbitrary dependence on their input order.
+
+    Frames without a positive ground-truth point receive AP=0. This keeps the
+    result finite and makes false-positive-only/empty-target frames explicit in
+    macro averages.
+    """
+    if gt_mask.shape != pred_scores.shape:
+        raise ValueError(
+            f'gt_mask and pred_scores must have the same shape, got '
+            f'{tuple(gt_mask.shape)} and {tuple(pred_scores.shape)}'
+        )
+    if gt_mask.ndim not in (1, 2):
+        raise ValueError(
+            'compute_average_precision expects [N] or [B, N] inputs, '
+            f'got {tuple(gt_mask.shape)}'
+        )
+    if not torch.isfinite(pred_scores).all():
+        raise ValueError('pred_scores must contain only finite values')
+
+    squeeze = gt_mask.ndim == 1
+    if squeeze:
+        gt_mask = gt_mask.unsqueeze(0)
+        pred_scores = pred_scores.unsqueeze(0)
+
+    labels = gt_mask > 0.5
+    scores = pred_scores.float()
+    average_precisions = []
+    for frame_labels, frame_scores in zip(labels, scores):
+        positive_count = frame_labels.sum()
+        if positive_count == 0:
+            average_precisions.append(frame_scores.new_zeros(()))
+            continue
+
+        order = torch.argsort(frame_scores, descending=True, stable=True)
+        sorted_scores = frame_scores[order]
+        sorted_labels = frame_labels[order].to(frame_scores.dtype)
+        cumulative_true_positives = sorted_labels.cumsum(dim=0)
+
+        # AP changes only after consuming every point at a distinct score.
+        # Evaluating tied points together matches threshold-based PR curves.
+        group_end = torch.ones_like(sorted_scores, dtype=torch.bool)
+        group_end[:-1] = sorted_scores[:-1] != sorted_scores[1:]
+        end_indices = group_end.nonzero(as_tuple=True)[0]
+        end_true_positives = cumulative_true_positives[end_indices]
+        group_true_positives = torch.diff(
+            end_true_positives,
+            prepend=end_true_positives.new_zeros(1),
+        )
+        precision = end_true_positives / (end_indices + 1).to(frame_scores.dtype)
+        average_precisions.append(
+            (precision * group_true_positives).sum()
+            / positive_count.to(frame_scores.dtype)
+        )
+
+    result = torch.stack(average_precisions)
+    return result.squeeze(0) if squeeze else result
 
 
 def compute_3d_ap(gt_mask: Tensor, pred_mask: Tensor) -> Tensor:

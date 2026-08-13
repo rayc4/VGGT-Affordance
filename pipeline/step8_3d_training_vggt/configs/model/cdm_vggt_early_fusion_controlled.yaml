@@ -1,0 +1,21 @@
+name: CDMVGGT
+
+## One mask channel plus a gated 32-D VGGT projection are processed jointly by
+## every PointTransformer stage.
+input_feats: 1
+vggt_feat_dim: 256
+vggt_proj_dim: 32
+
+## Split the first 33->32 projection into copied mask and zero-initialized VGGT
+## blocks. All PointTransformer weights remain trainable, while BatchNorm
+## running statistics retain the base checkpoint values.
+split_input_stem: true
+freeze_base: false
+freeze_batchnorm: true
+require_init_ckpt: true
+
+scene_model:
+  name: 'PointTransformerSeg'
+  num_points: ${task.dataset.num_points}
+  pretrained_weight:
+  freeze: false
