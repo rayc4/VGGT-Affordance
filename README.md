@@ -205,10 +205,9 @@ Hydra overrides after `--`, for example
 `-- task.evaluator.eval_nbatch=32`. For the VGGT model, select its evaluator
 with `--eval-script pipeline/step8_3d_training_vggt/eval_vggt.py`.
 
-The metrics script writes `training_metrics.csv`, `evaluation_metrics.csv`,
-`training_metrics.png`, `loss_metrics.png`, and `evaluation_metrics.png` below
-`metrics/`. It can also compare multiple experiments by passing multiple
-experiment directories.
+The metrics script writes one `metrics/metrics.png` dashboard containing the
+main evaluation metrics and loss curves. It can also compare multiple
+experiments by passing multiple experiment directories.
 
 ---
 
