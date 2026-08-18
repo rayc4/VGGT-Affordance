@@ -1,7 +1,9 @@
 import argparse
 import importlib.util
+import json
 from pathlib import Path
 import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -59,6 +61,20 @@ class SplitOutputRootTest(unittest.TestCase):
                 'pipeline/step5_molmo_sam/molmo_output/train',
             ),
         )
+
+    def test_step5_reads_affordance_from_explicit_root(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            affordance_dir = Path(temp_dir) / 'val'
+            affordance_dir.mkdir()
+            (affordance_dir / 'visit-1_affordance.json').write_text(
+                json.dumps([{'desc_id': 'desc-1', 'affordance': 'handle'}])
+            )
+            self.assertEqual(
+                STEP5.get_affordance_info(
+                    'val', 'visit-1', 'video-1', 'desc-1', temp_dir
+                ),
+                'handle',
+            )
 
     def test_step6_appends_split_to_all_roots(self):
         args = argparse.Namespace(

@@ -6,6 +6,10 @@ import pandas as pd
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from tqdm import tqdm
 
+DEFAULT_OUTPUT_ROOT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'affordance_result'
+)
+
 class QwenAffordanceModel:
     def __init__(self, model_path='Qwen/Qwen2.5-7B-Instruct'):
         self.model_path = model_path
@@ -100,7 +104,12 @@ Output only the component name:
             print(f"Error processing description file {desc_file_path}: {e}")
         return results
 
-def process_affordance_inference(data_root, split, model_path='Qwen/Qwen2.5-7B-Instruct'):
+def process_affordance_inference(
+    data_root,
+    split,
+    model_path='Qwen/Qwen2.5-7B-Instruct',
+    output_root=DEFAULT_OUTPUT_ROOT,
+):
     print("Starting affordance inference...")
     print(f"Data root: {data_root}, split: {split}, model: {model_path}")
     print("Loading Qwen model...")
@@ -117,7 +126,7 @@ def process_affordance_inference(data_root, split, model_path='Qwen/Qwen2.5-7B-I
     df['visit_id'] = df['visit_id'].astype(str)
     df_single = df.drop_duplicates(subset=['visit_id'], keep='first')
     print(f"Unique visit_id: {len(df_single)}")
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'affordance_result', split)
+    output_dir = os.path.join(output_root, split)
     os.makedirs(output_dir, exist_ok=True)
     all_results = []
     for index, row in tqdm(df_single.iterrows(), total=len(df_single), desc='visit_id'):
@@ -141,8 +150,16 @@ def main():
     parser.add_argument('--model_path', type=str, default='Qwen/Qwen2.5-7B-Instruct', help='Qwen model path')
     parser.add_argument('--data_root', type=str, default='scenefun3d', help='Data root path')
     parser.add_argument('--split', type=str, choices=['train', 'val', 'test'], required=True, help='Dataset split')
+    parser.add_argument(
+        '--output_root',
+        type=str,
+        default=DEFAULT_OUTPUT_ROOT,
+        help='Output root; <split> is appended before writing affordance JSON files',
+    )
     args = parser.parse_args()
-    process_affordance_inference(args.data_root, args.split, args.model_path)
+    process_affordance_inference(
+        args.data_root, args.split, args.model_path, args.output_root
+    )
 
 if __name__ == '__main__':
     main()

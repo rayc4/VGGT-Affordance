@@ -29,7 +29,7 @@ Usage:
 
 Both roots contain split subdirectories. INPUT_ROOT/<split> is read and
 OUTPUT_ROOT/<split> is created. The same paths can be set with environment
-variables INPUT_ROOT and OUTPUT_ROOT.
+variables INPUT_ROOT and OUTPUT_ROOT. AFFORDANCE_ROOT selects the Step 1 tree.
 EOF
 }
 
@@ -74,6 +74,7 @@ esac
 DATA_ROOT="${DATA_ROOT:-scenefun3d}"
 INPUT_ROOT="${INPUT_ROOT_ARG:-${INPUT_ROOT:-${ROOT_DIR:-pipeline/step4_crop_images/seg_image_output/point_clipwithaffordance_output}}}"
 OUTPUT_ROOT="${OUTPUT_ROOT_ARG:-${OUTPUT_ROOT:-pipeline/step5_molmo_sam/molmo_output}}"
+AFFORDANCE_ROOT="${AFFORDANCE_ROOT:-pipeline/step1_affordance/affordance_result}"
 SCRIPT="${SCRIPT:-pipeline/step5_molmo_sam/molmo_sam.py}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"                     # any extra flags
 LOG_DIR="${LOG_DIR:-pipeline/step5_molmo_sam/logs/$SPLIT}"
@@ -112,6 +113,7 @@ for shard in "${!GPU_ARR[@]}"; do
   CUDA_VISIBLE_DEVICES="$gpu" python "$SCRIPT" \
     --split "$SPLIT" --data_root "$DATA_ROOT" \
     --input_root "$INPUT_ROOT" --output_root "$OUTPUT_ROOT" \
+    --affordance_root "$AFFORDANCE_ROOT" \
     --num_shards "$NUM_SHARDS" --shard "$shard" \
     $EXTRA_ARGS \
     > "$log" 2>&1 &

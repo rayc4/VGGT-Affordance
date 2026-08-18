@@ -293,8 +293,16 @@ def find_crop_images(root_dir, split, allowed_visit_ids):
         )
     return crop_images
 
-def get_affordance_info(split, visit_id, video_id, desc_id):
-    json_path = f"pipeline/step1_affordance/affordance_result/{split}/{visit_id}_affordance.json"
+def get_affordance_info(
+    split,
+    visit_id,
+    video_id,
+    desc_id,
+    affordance_root='pipeline/step1_affordance/affordance_result',
+):
+    json_path = os.path.join(
+        affordance_root, split, f"{visit_id}_affordance.json"
+    )
     if not os.path.exists(json_path):
         return None
     try:
@@ -330,6 +338,11 @@ def main():
                         help='Step 4 root; <split> is appended')
     parser.add_argument('--output_root', default=None,
                         help='Output root; <split> is appended')
+    parser.add_argument(
+        '--affordance_root',
+        default='pipeline/step1_affordance/affordance_result',
+        help='Step 1 root containing <split>/<visit_id>_affordance.json',
+    )
     parser.add_argument('--num_shards', type=int, default=1, help="total number of parallel shards")
     parser.add_argument('--shard', type=int, default=0, help="index of this shard in [0, num_shards)")
     args = parser.parse_args()
@@ -367,7 +380,9 @@ def main():
     sam_model, sam_processor = init_sam_model(device)
     for idx, (img_path, split, visit_id, video_id, desc_id, fname) in enumerate(pending):
         print(f"\n[{idx+1}/{len(pending)}] Processing: {img_path}")
-        affordance_info = get_affordance_info(split, visit_id, video_id, desc_id)
+        affordance_info = get_affordance_info(
+            split, visit_id, video_id, desc_id, args.affordance_root
+        )
         if affordance_info and affordance_info.strip():
             prompt = f"point to {affordance_info}"
         else:

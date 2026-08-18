@@ -22,8 +22,11 @@ Environment:
                         cdm_vggt_early_fusion_controlled)
   MAX_STEPS             Fixed optimization budget (default: 5800)
   BASE_LR               PointTransformer/contact-head LR (default: 1e-5)
+  VGGT_LR               Optional absolute LR for the new VGGT path. When set,
+                        it takes precedence over VGGT_LR_MULTIPLIER.
   VGGT_LR_MULTIPLIER    New VGGT-path LR multiplier (default: 10)
   BASE_FREEZE_STEPS     VGGT-only warmup before joint training (default: 725)
+  FULLY_FREEZE_BASE     Set to 1 to freeze the base for all MAX_STEPS
   EXPECTED_TRAIN_FRAMES Strict train cardinality (default: 9257)
   EXPECTED_VAL_FRAMES   Strict validation cardinality (default: 5619)
 EOF
@@ -50,8 +53,10 @@ VGGT_FEAT_NAME="${VGGT_FEAT_NAME:-vggt_feat.npy}"
 MODEL_CONFIG="${MODEL_CONFIG:-cdm_vggt_early_fusion_controlled}"
 MAX_STEPS="${MAX_STEPS:-5800}"
 BASE_LR="${BASE_LR:-1e-5}"
+VGGT_LR="${VGGT_LR:-}"
 VGGT_LR_MULTIPLIER="${VGGT_LR_MULTIPLIER:-10}"
 BASE_FREEZE_STEPS="${BASE_FREEZE_STEPS:-725}"
+FULLY_FREEZE_BASE="${FULLY_FREEZE_BASE:-0}"
 EXPECTED_TRAIN_FRAMES="${EXPECTED_TRAIN_FRAMES:-9257}"
 EXPECTED_VAL_FRAMES="${EXPECTED_VAL_FRAMES:-5619}"
 
@@ -71,6 +76,30 @@ done
     echo "ERROR: BASE_FREEZE_STEPS must be a non-negative integer." >&2
     exit 1
 }
+case "$FULLY_FREEZE_BASE" in
+    0|1) ;;
+    *)
+        echo "ERROR: FULLY_FREEZE_BASE must be 0 or 1." >&2
+        exit 1
+        ;;
+esac
+if [[ "$FULLY_FREEZE_BASE" -eq 1 ]]; then
+    BASE_FREEZE_STEPS="$MAX_STEPS"
+fi
+if [[ -n "$VGGT_LR" ]]; then
+    if ! awk -v lr="$BASE_LR" 'BEGIN { exit !(lr > 0) }'; then
+        echo "ERROR: BASE_LR must be positive (got '$BASE_LR')." >&2
+        exit 1
+    fi
+    if ! awk -v lr="$VGGT_LR" 'BEGIN { exit !(lr > 0) }'; then
+        echo "ERROR: VGGT_LR must be positive (got '$VGGT_LR')." >&2
+        exit 1
+    fi
+    VGGT_LR_MULTIPLIER="$(
+        awk -v vggt_lr="$VGGT_LR" -v base_lr="$BASE_LR" \
+            'BEGIN { printf "%.12g", vggt_lr / base_lr }'
+    )"
+fi
 
 export EXP_NAME="${EXP_NAME:-weighted-vggt-early-fusion}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs}"

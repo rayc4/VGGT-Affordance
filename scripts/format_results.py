@@ -3,6 +3,7 @@
 Usage:
     python3 scripts/format_results.py                          # newest run under outputs/
     python3 scripts/format_results.py path/to/results.json
+    python3 scripts/format_results.py path/to/checkpoint.pt
     python3 scripts/format_results.py <run> --worst 10 --best 10  # best mAP in <run>/eval
     python3 scripts/format_results.py <run> --by-visit
     python3 scripts/format_results.py <run> --csv table.csv
@@ -13,6 +14,7 @@ import csv
 import glob
 import json
 import os
+import re
 import statistics
 import sys
 
@@ -62,11 +64,115 @@ def find_best_results(root):
     return max(ranked)[2] if ranked else None
 
 
+def checkpoint_root(path):
+    """Return the nearest ``ckpt`` ancestor of a checkpoint path."""
+    parent = os.path.dirname(os.path.abspath(path))
+    while True:
+        if os.path.basename(parent) == 'ckpt':
+            return parent
+        ancestor = os.path.dirname(parent)
+        if ancestor == parent:
+            return None
+        parent = ancestor
+
+
+def checkpoint_label(path, root):
+    """Match the output label used by eval_all_checkpoints.py."""
+    relative = os.path.splitext(os.path.relpath(path, root))[0]
+    return '__'.join(relative.split(os.sep))
+
+
+def find_metadata_results(eval_root, checkpoint=None, checkpoint_step=None):
+    """Find ranked results whose metadata identifies a checkpoint or step."""
+    matches = []
+    checkpoint = os.path.realpath(checkpoint) if checkpoint else None
+    for metadata_path in glob.glob(
+            os.path.join(eval_root, '**', 'metadata.json'), recursive=True):
+        try:
+            with open(metadata_path) as f:
+                metadata = json.load(f)
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+
+        if checkpoint is not None:
+            recorded = metadata.get('checkpoint')
+            matched = (isinstance(recorded, str)
+                       and os.path.realpath(os.path.expanduser(recorded)) == checkpoint)
+        else:
+            matched = metadata.get('checkpoint_step') == checkpoint_step
+        results_path = os.path.join(os.path.dirname(metadata_path), 'results.json')
+        if matched and os.path.isfile(results_path):
+            matches.append(results_path)
+
+    ranked = [
+        (score, os.path.getmtime(path), path)
+        for path in matches
+        if (score := result_score(path)) is not None
+    ]
+    return max(ranked)[2] if ranked else None
+
+
+def best_checkpoint_step(path):
+    """Read the numbered step represented by a ``*_best.pt`` checkpoint."""
+    if not os.path.splitext(path)[0].endswith('_best'):
+        return None
+    info_path = os.path.join(os.path.dirname(path), 'best_checkpoint.json')
+    try:
+        with open(info_path) as f:
+            step = json.load(f).get('step')
+        return step if isinstance(step, int) and not isinstance(step, bool) else None
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def find_checkpoint_results(path):
+    """Resolve a checkpoint to the results produced for that checkpoint."""
+    root = checkpoint_root(path)
+    if root is None:
+        return None
+
+    path = os.path.abspath(path)
+    eval_root = os.path.join(os.path.dirname(root), 'eval')
+    if not os.path.isdir(eval_root):
+        return None
+
+    # eval_all_checkpoints.py writes each checkpoint below eval/<label>/.
+    result = find_best_results(
+        os.path.join(eval_root, checkpoint_label(path, root))
+    )
+    if result is not None:
+        return result
+
+    # Also support evaluations written directly below eval/ or moved within it.
+    result = find_metadata_results(eval_root, checkpoint=path)
+    if result is not None:
+        return result
+
+    # The best checkpoint is a copy of a numbered checkpoint. Batch evaluation
+    # commonly skips *_best.pt, so use best_checkpoint.json to find that result.
+    step = best_checkpoint_step(path)
+    if step is None:
+        return None
+    stem = os.path.splitext(os.path.basename(path))[0][:-len('_best')]
+    numbered = re.compile(rf'{re.escape(stem)}0*{step}$')
+    for candidate in glob.glob(os.path.join(root, '**', '*.pt'), recursive=True):
+        candidate_stem = os.path.splitext(os.path.basename(candidate))[0]
+        if numbered.fullmatch(candidate_stem):
+            result = find_best_results(
+                os.path.join(eval_root, checkpoint_label(candidate, root))
+            )
+            if result is not None:
+                return result
+    return find_metadata_results(eval_root, checkpoint_step=step)
+
+
 def resolve(path):
-    """Accept a results.json, a test-* dir, or a run/eval directory."""
+    """Accept results, checkpoint, test, run, or eval paths."""
     if path is None:
         return find_latest_results()
     if os.path.isfile(path):
+        if os.path.splitext(path)[1].lower() == '.pt':
+            return find_checkpoint_results(path)
         return path
     direct_result = os.path.join(path, 'results.json')
     if os.path.isfile(direct_result):
@@ -212,9 +318,10 @@ def write_csv(rows, path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('path', nargs='?', help='results.json, a test-* dir, or an exp '
-                                                'dir (exp dirs use the best mean mAP under '
-                                                'DIR/eval; default: newest under outputs/)')
+    parser.add_argument('path', nargs='?', help='results.json, a checkpoint .pt, a test-* '
+                                                'dir, or an exp dir (exp dirs use the best '
+                                                'mean mAP under DIR/eval; default: newest '
+                                                'under outputs/)')
     parser.add_argument('--worst', type=int, default=0, metavar='N',
                         help='list the N lowest-mIoU samples')
     parser.add_argument('--best', type=int, default=0, metavar='N',
@@ -227,8 +334,9 @@ def main():
 
     path = resolve(args.path)
     if path is None:
-        sys.exit(f'error: no results.json found '
-                 f'{f"under {args.path}" if args.path else "under outputs/"}')
+        location = (f'for {args.path}' if args.path and os.path.isfile(args.path)
+                    else f'under {args.path}' if args.path else 'under outputs/')
+        sys.exit(f'error: no results.json found {location}')
 
     rows = rows_of(load(path))
     if not rows:

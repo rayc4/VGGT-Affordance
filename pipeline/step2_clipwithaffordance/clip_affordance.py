@@ -9,7 +9,16 @@ import argparse
 import pandas as pd
 from tqdm import tqdm
 
-def process_clip(data_root, split):
+DEFAULT_OUTPUT_ROOT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'clipwithaffordance_output'
+)
+
+def process_clip(
+    data_root,
+    split,
+    affordance_root='pipeline/step1_affordance/affordance_result',
+    output_root=DEFAULT_OUTPUT_ROOT,
+):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
     print("Loading CLIP model...")
@@ -40,7 +49,9 @@ def process_clip(data_root, split):
         print(f"processing visit_id: {visit_id}")
         split_dir = "train_val_set" if split in ('train', 'val') else "test_set"
         desc_path = os.path.join(data_root, split_dir, visit_id, f"{visit_id}_descriptions.json")
-        affordance_path = os.path.join('pipeline/step1_affordance/affordance_result', split, f"{visit_id}_affordance.json")
+        affordance_path = os.path.join(
+            affordance_root, split, f"{visit_id}_affordance.json"
+        )
         descid2affordance = {}
         if os.path.exists(affordance_path):
             with open(affordance_path, 'r') as f:
@@ -113,7 +124,7 @@ def process_clip(data_root, split):
                 }
                 results.append(result_item)
             if results:
-                test_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'clipwithaffordance_output', split, visit_id)
+                test_dir = os.path.join(output_root, split, visit_id)
                 os.makedirs(test_dir, exist_ok=True)
                 video_result_path = os.path.join(test_dir, f"{video_id}_result.json")
                 with open(video_result_path, 'w', encoding='utf-8') as f:
@@ -124,8 +135,22 @@ def main():
     parser = argparse.ArgumentParser(description='CLIP affordance dataset processing')
     parser.add_argument('--data_root', type=str, default='scenefun3d', help='Data root path')
     parser.add_argument('--split', type=str, choices=['train', 'val', 'test'], required=True, help='Dataset split')
+    parser.add_argument(
+        '--affordance_root',
+        type=str,
+        default='pipeline/step1_affordance/affordance_result',
+        help='Step 1 root containing <split>/<visit_id>_affordance.json',
+    )
+    parser.add_argument(
+        '--output_root',
+        type=str,
+        default=DEFAULT_OUTPUT_ROOT,
+        help='Output root; <split> is appended before writing CLIP result JSON files',
+    )
     args = parser.parse_args()
-    process_clip(args.data_root, args.split)
+    process_clip(
+        args.data_root, args.split, args.affordance_root, args.output_root
+    )
 
 if __name__ == '__main__':
     main()
