@@ -174,11 +174,11 @@ dependencies:
       - termcolor==3.3.0
       - threadpoolctl==3.6.0
       - timm==1.0.27
-      - tokenizers==0.21.4
+      - tokenizers==0.22.1
       - tomli==2.4.1
       - tqdm==4.68.3
       - traitlets==5.15.1
-      - transformers==4.51.3
+      - transformers==4.57.1
       - triton==3.0.0
       - typer==0.25.1
       - typing-inspection==0.4.2

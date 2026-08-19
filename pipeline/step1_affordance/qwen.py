@@ -11,7 +11,7 @@ DEFAULT_OUTPUT_ROOT = os.path.join(
 )
 
 class QwenAffordanceModel:
-    def __init__(self, model_path='Qwen/Qwen2.5-7B-Instruct'):
+    def __init__(self, model_path='Qwen/Qwen3-8B'):
         self.model_path = model_path
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
@@ -42,7 +42,10 @@ Output only the component name:
                 "content": prompt
             }
         ]
-        text = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        text = self.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True,
+            enable_thinking=False,
+        )
         inputs = self.tokenizer(
             text,
             return_tensors="pt",
@@ -107,7 +110,7 @@ Output only the component name:
 def process_affordance_inference(
     data_root,
     split,
-    model_path='Qwen/Qwen2.5-7B-Instruct',
+    model_path='Qwen/Qwen3-8B',
     output_root=DEFAULT_OUTPUT_ROOT,
 ):
     print("Starting affordance inference...")
@@ -147,7 +150,7 @@ def process_affordance_inference(
 
 def main():
     parser = argparse.ArgumentParser(description='Qwen affordance inference')
-    parser.add_argument('--model_path', type=str, default='Qwen/Qwen2.5-7B-Instruct', help='Qwen model path')
+    parser.add_argument('--model_path', type=str, default='Qwen/Qwen3-8B', help='Qwen model path')
     parser.add_argument('--data_root', type=str, default='scenefun3d', help='Data root path')
     parser.add_argument('--split', type=str, choices=['train', 'val', 'test'], required=True, help='Dataset split')
     parser.add_argument(

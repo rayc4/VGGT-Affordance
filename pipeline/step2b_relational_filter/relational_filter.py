@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 
-DEFAULT_MODEL = "Qwen/Qwen2.5-VL-7B-Instruct"
+DEFAULT_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
 DEFAULT_INPUT_ROOT = "pipeline/step2_clipwithaffordance/clipwithaffordance_output"
 DEFAULT_OUTPUT_ROOT = "pipeline/step2b_relational_filter/clipwithaffordance_output"
 SCHEMA_VERSION = 4
@@ -91,9 +91,8 @@ def is_relational_description(description: str) -> bool:
 def build_filter_prompt(description: str) -> str:
     """Build the single direct visual judgment prompt."""
 
-    return f"""Does the scene in the image provide the objects necessary to 
-identify objects and perform the following action?
-"{description}"
+    return f"""Does the scene in the image contain the objects necessary to perform the following action?
+Action: "{description}"
 
 Answer YES if the object or component being physically operated and any
 objects used to locate it are recognizable, and their described relationship
@@ -121,7 +120,7 @@ def parse_filter_response(text: str) -> FilterDecision:
 
 
 class QwenRelationalEvaluator:
-    """Lazy Qwen2.5-VL direct frame evaluator."""
+    """Lazy Qwen3-VL direct frame evaluator."""
 
     def __init__(
         self,
@@ -146,10 +145,10 @@ class QwenRelationalEvaluator:
             return
         import torch
         from qwen_vl_utils import process_vision_info
-        from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+        from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
         print(f"Loading relational filter model: {self.model_name}")
-        self._model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        self._model = Qwen3VLForConditionalGeneration.from_pretrained(
             self.model_name,
             torch_dtype="auto",
             device_map="auto",

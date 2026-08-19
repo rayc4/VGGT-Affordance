@@ -2,7 +2,7 @@ import os
 import json
 import argparse
 from pathlib import Path
-from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
+from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 import torch
 from tqdm import tqdm
@@ -11,12 +11,12 @@ import multiprocessing
 
 def load_model_and_processor():
     print("Loading model...")
-    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        "Qwen/Qwen2.5-VL-7B-Instruct", 
+    model = Qwen3VLForConditionalGeneration.from_pretrained(
+        "Qwen/Qwen3-VL-8B-Instruct",
         torch_dtype="auto", 
         device_map="auto"
     )
-    processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct", use_fast=True)
+    processor = AutoProcessor.from_pretrained("Qwen/Qwen3-VL-8B-Instruct", use_fast=True)
     print("Model loaded.")
     return model, processor
 

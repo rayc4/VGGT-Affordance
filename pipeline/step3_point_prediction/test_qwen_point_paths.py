@@ -8,7 +8,7 @@ from unittest import mock
 
 def load_step3_module():
     transformers = types.ModuleType('transformers')
-    transformers.Qwen2_5_VLForConditionalGeneration = object
+    transformers.Qwen3VLForConditionalGeneration = object
     transformers.AutoProcessor = object
 
     qwen_vl_utils = types.ModuleType('qwen_vl_utils')

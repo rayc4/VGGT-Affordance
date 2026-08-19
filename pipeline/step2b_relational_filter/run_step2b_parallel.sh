@@ -34,7 +34,7 @@ GPUS="${GPUS:-0,1,2,3}"
 DATA_ROOT="${DATA_ROOT:-scenefun3d}"
 INPUT_ROOT="${INPUT_ROOT:-pipeline/step2_clipwithaffordance/clipwithaffordance_output}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-pipeline/step2b_relational_filter/clipwithaffordance_output}"
-MODEL="${MODEL:-Qwen/Qwen2.5-VL-7B-Instruct}"
+MODEL="${MODEL:-Qwen/Qwen3-VL-8B-Instruct}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"
 LOG_DIR="${LOG_DIR:-pipeline/step2b_relational_filter/logs}"
 

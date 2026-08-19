@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Parallel Step 3 (Qwen2.5-VL point prediction) runner.
+# Parallel Step 3 (Qwen3-VL point prediction) runner.
 #
 # Runs one process per GPU, each handling a disjoint 1/N slice of the visit_ids
 # (data parallelism). This is the right way to use multiple GPUs here: the 7B
@@ -84,7 +84,7 @@ done
 
 # ---- config (override via env) -------------------------------------------
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-ENV_NAME="${ENV_NAME:-tasa}"                     # conda env with transformers 4.51.3 + qwen_vl_utils
+ENV_NAME="${ENV_NAME:-tasa}"                     # conda env with Qwen3-VL support + qwen_vl_utils
 N_GPUS="${N_GPUS:-8}"                            # number of GPUs to fan out over
 GPUS="${GPUS:-$(seq 0 $((N_GPUS - 1)))}"         # explicit GPU id list overrides N_GPUS
 DATA_ROOT="${DATA_ROOT:-scenefun3d}"
